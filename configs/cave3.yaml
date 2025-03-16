@@ -1,0 +1,34 @@
+hydra:
+  run:
+    dir: .
+
+debug: True
+stitch_type: actual
+homog:
+  type: default
+  feature_extractor: SuperPoint
+  feature_matcher: LightGlue
+  do_optimization: False
+  max_matches: 200
+  optimizer: marek
+  debug: True
+  load_homog: opt_hom_20250303_220453.pkl
+
+optical:
+  model: memflow
+  checkpoint: sintel
+  input_size: [540, 960]
+  subsample_factor: # [1,1]
+  patch_overlap: [10,10]
+  load_flows:
+
+  # For debugging
+  viz_patch: [13]
+
+
+data:
+  img_overview: 0.JPG
+  img_folder: "imgs/example4"
+  img_pairs: [[0,1],[0,2],[0,3],[0,4],[0,5],[0,6],[0,7],[0,8],[0,9],
+              [0,10], [0,11], [0,12], [0,13],[0,14], [0,15]]
+  final_res: [6400, 8400]
