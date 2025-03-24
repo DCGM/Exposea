@@ -14,6 +14,7 @@ import datetime
 from HomogEst import HomogEstimator
 from Stitcher import Stitcher
 from Optical import OpticalFlow
+from LightEqual import *
 
 class CustomError(Exception):
     """Custom exception with a message."""
@@ -76,8 +77,9 @@ class StichApp():
         stitched = self.stitcher.blend("weighted", args=warped_images)
         cv.imwrite("./plots/final_stitch.jpg", stitched)
         # Warp images with optical flow
-        # Store or load flows for debug
+        ref = warped_images[0]
 
+        # Store or load flows for debug
         if self.config.optical.load_flows:
             with open(self.config.optical.load_flows, "rb") as f:
                 flow_warped_images = pickle.load(f)
@@ -88,9 +90,13 @@ class StichApp():
                 with open(f"flows_{timestamp}.pkl", "wb") as f:
                     pickle.dump(flow_warped_images, f)
 
-
+        # Equalize light
+        # flow_warped_images[0] = ref
+        # light_adjusted = equalize(flow_warped_images)
+        # light_adjusted[0] = ref
         # Flow Stitch
         stitched = self.stitcher.blend(self.config.stitch_type, args={"imgs":flow_warped_images, "Hs":homographies })
+        #stitched = self.stitcher.blend("weighted", args=warped_images)
         cv.imwrite("./plots/final_flow_stitch.jpg", stitched)
 
     def load_image_paths(self, sort):
@@ -134,7 +140,7 @@ class StichApp():
 
 
 # Lauch the application for stitching the image
-@hydra.main(version_base=None, config_path="configs", config_name="cave1")
+@hydra.main(version_base=None, config_path="configs", config_name="debug")
 def main(config):
     app = StichApp(config)
     app.run()

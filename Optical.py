@@ -125,6 +125,7 @@ class OpticalFlow:
         :return: list of optical flows
         """
         # Holders for overlap image, to which every single one is aligned
+        # TODO Redo to look nicer
         ov = warped_images.pop(0)
         ov_img = ov[0]
         # ov_mask = ov[0]

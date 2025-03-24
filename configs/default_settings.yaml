@@ -29,10 +29,6 @@ optical:
 
 data:
   img_overview: 0.JPG
-  img_folder: "imgs/example1"
-<<<<<<< HEAD
-  img_pairs: [[0,1],[0,2],[0,3],[0,4],[0,5],[0,6],[0,7]]
-=======
-  img_pairs: [[0,1],[0,2],[0,3],[0,4],[0,5],[0,6],[0,7],[1,2],[1,3], [2,4], [3,5], [4,6], [2,7]]
->>>>>>> 9bbc8bc (Initial commit)
+  img_folder: "imgs/debug_example"
+  img_pairs: [[0,1]]
   final_res: [6400, 8400]

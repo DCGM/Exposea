@@ -1,37 +1,34 @@
-# By default hydra changes working dir, this PREVENTS that
 hydra:
   run:
     dir: .
 
 debug: True
 stitch_type: actual
-
 homog:
   type: default
   feature_extractor: SuperPoint
   feature_matcher: LightGlue
   do_optimization: False
-  max_kpts: 4096
   max_matches: 200
   optimizer: marek
   debug: True
-  load_homog: opt_hom_20250319_170049.pkl
+  load_homog: homog_debug.pkl
+
 
 optical:
   model: memflow_t
   checkpoint: sintel
   input_size: [540, 960]
-  patch_overlap: [20,20]
+  patch_overlap: [40,40]
   subsample_factor: # [1,1]
-  load_flows: flows_20250319_174531.pkl
+  load_flows: flows_debug.pkl
+
   # For debugging
   viz_patch: [13]
 
 
 data:
   img_overview: 0.JPG
-  img_folder: "imgs/example3"
-  img_pairs: [[0,1],[0,2],[0,3],[0,4],[0,5],[0,6],[0,7],[0,8],[0,9],
-              [0,10], [0,11], [0,12], [0,13],[0,14], [0,15], [0,16],
-              [0,17], [0,18], [0,19], [0,20]]
+  img_folder: "imgs/debug_example"
+  img_pairs: [[0,1], [0,2], [0,3]]
   final_res: [6400, 8400]
