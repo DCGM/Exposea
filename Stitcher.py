@@ -209,49 +209,33 @@ class Stitcher():
         seam = self.seam_gradient(best_image_index)
         # Get distance from seam
         seam_dist = 1 - self.calc_seam_dist(seam, k=100)
+
+        seam_mask = np.where(seam_dist > 0, 1, 0)[:,:,0]
         cv.imwrite("./plots/seam_dist.jpg", seam_dist * 255)
 
         h, w = best_image_index.shape[:2]
         final_img = np.zeros((h, w, 3))
-        cumulative_mask = np.zeros((h, w), dtype=int)
+        final_mask = np.zeros((h, w), dtype=bool)
         cumulative_inter = np.zeros((h, w), dtype=int)
-
 
         for key, val in imgs.items():
             if key == 0:
                 continue
 
-
-            # Mask where this image has best pixels
-            best_mask = best_image_index == int(key)
-
-            weight_best = self.calc_seam_dist(best_mask.astype(int))
-            weight_best = 1 - weight_best
-
-            weight_final = self.calc_seam_dist(cumulative_mask)
-            weight_final = 1 - weight_final
-
-            # blend_sum = weight_best + weight_final
-            # weight_best /= blend_sum
-            # weight_final /= blend_sum
+            best_image_mask = best_image_index == int(key)
 
 
-            cv.imwrite(f"./plots/best_blend_{key}.jpg", weight_best * 255)
-            cv.imwrite(f"./plots/final_blend_{key}.jpg", weight_final * 255)
-
-            inter = (val[1][:,:,0] & cumulative_inter).astype(bool)
-            cv.imwrite(f"./plots/inter_{key}.jpg", inter * 255)
-            final_img[inter] = final_img[inter] * (1- weight_best)[inter] + val[0][inter] * weight_best[inter]
+            final_mask_dist = self.edge_weights(final_mask.astype(int))
 
 
-            final_img[best_mask & ~inter] = val[0][best_mask & ~inter]
+            final_img[~final_mask] = val[0][~final_mask]
 
-            cumulative_mask = cumulative_mask | best_mask
-            cumulative_inter = cumulative_inter | val[1][:,:,0]
+            final_mask = final_mask | best_image_mask
 
-            cv.imwrite(f"./plots/final_img_{key}.jpg", final_img)
-            cv.imwrite(f"./plots/cum_mask{key}.jpg", cumulative_mask * 255)
-            cv.imwrite(f"./plots/cum_inter{key}.jpg", cumulative_inter * 255)
+
+            # cv.imwrite(f"./plots/final_img_{key}.jpg", final_img)
+            # cv.imwrite(f"./plots/cum_mask{key}.jpg", cumulative_mask * 255)
+            # cv.imwrite(f"./plots/cum_inter{key}.jpg", cumulative_inter * 255)
 
             #Mask for blending (where cumulative mask and current mask overlap)
         return final_img
@@ -285,6 +269,17 @@ class Stitcher():
     # cv.imwrite(f"./plots/cum_inter{key}.jpg", cumulative_inter * 255)
     #
     # Mask for blending (where cumulative mask and current mask overlap)
+
+    def edge_weights(self, img):
+        # Calculate the average distance through edge
+        inner = self.calc_seam_dist(img, k=100, type=cv.THRESH_BINARY)
+        inner = np.minimum(inner, 1)
+
+        outer = self.calc_seam_dist(img, k=100, type=cv.THRESH_BINARY_INV)
+        outer = (1 - np.minimum(outer, 1)) - 1
+        normalized = cv.normalize(inner + outer, None, 0.0, 1.0, cv.NORM_MINMAX, dtype=cv.CV_32F)
+        return normalized
+
 
     def calc_seam_dist(self, seam, k = 100, type=cv.THRESH_BINARY_INV):
         seam = np.array(seam * 255, dtype=np.uint8)

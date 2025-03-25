@@ -24,7 +24,7 @@ def equalize(imgs):
         norm_frag = img.astype(np.float32) / 255.0
         ref_norm = ref_img.astype(np.float32) / 255.0
 
-        frag_adj = spatial_light_adjustment(norm_frag, ref_norm, mask, grid_size=64, mode="scale")
+        frag_adj = spatial_light_adjustment(norm_frag, ref_norm, mask, grid_size=32, mode="scale")
 
         frag_adj = numpy.asarray(frag_adj * 255.0, dtype=numpy.uint8)
 
@@ -54,7 +54,7 @@ def reshape_to_lbfgs(reference, fragment, device):
     return ref, frag
 
 
-def spatial_light_adjustment(fragment, reference, mask, grid_size=16, mode="scale", num_iters=200, lr=0.1):
+def spatial_light_adjustment(fragment, reference, mask, grid_size=16, mode="scale", num_iters=100, lr=0.1):
     """
        Adjust the lighting of a fragment image to match a reference image with spatially varying correction.
 
