@@ -91,11 +91,11 @@ class StichApp():
                     pickle.dump(flow_warped_images, f)
 
         # Equalize light
-        # flow_warped_images[0] = ref
-        # light_adjusted = equalize(flow_warped_images)
-        # light_adjusted[0] = ref
+        flow_warped_images[0] = ref
+        light_adjusted = equalize(flow_warped_images)
+        light_adjusted[0] = ref
         # Flow Stitch
-        stitched = self.stitcher.blend(self.config.stitch_type, args={"imgs":flow_warped_images, "Hs":homographies })
+        stitched = self.stitcher.blend(self.config.stitch_type, args={"imgs":light_adjusted, "Hs":homographies })
         #stitched = self.stitcher.blend("weighted", args=warped_images)
         cv.imwrite("./plots/final_flow_stitch.jpg", stitched)
 
@@ -140,7 +140,7 @@ class StichApp():
 
 
 # Lauch the application for stitching the image
-@hydra.main(version_base=None, config_path="configs", config_name="debug")
+@hydra.main(version_base=None, config_path="configs", config_name="cave1")
 def main(config):
     app = StichApp(config)
     app.run()

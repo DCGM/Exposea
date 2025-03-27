@@ -167,15 +167,22 @@ class Stitcher():
         res = (int(self.config.data.final_res[0]), int(self.config.data.final_res[1]))
         idx_accum = np.ones(res) * -1
         val_accum = np.ones(res) * np.inf
+        eroded_masks = {}
         for key, val in imgs.items():
             # Ignore reference
             if key == 0:
                 continue
-            #
             img = val[0]
             mask = val[1]
-            y_min, x_min = np.argwhere(mask[:,:,0]).min(axis=0) # Get min row and column
-            y_max, x_max = np.argwhere(mask[:,:,0]).max(axis=0)  # Get max row and column
+
+            # Adjust the mask for overlap
+            blend_width = self.config.stitcher.blend_width
+            eros_kernel = np.ones((2 * blend_width +1, 2 * blend_width +1), np.uint8)
+            shrunk_mask = cv.erode(mask.astype(np.uint8), eros_kernel, iterations=1).astype(bool)
+            eroded_masks[key] = shrunk_mask
+
+            y_min, x_min = np.argwhere(shrunk_mask[:,:,0]).min(axis=0) # Get min row and column
+            y_max, x_max = np.argwhere(shrunk_mask[:,:,0]).max(axis=0)  # Get max row and column
 
             # Compute dense jacobian denterminants
             det = self.compute_jacobian_determinant(Hs[key], img[y_min:y_max, x_min:x_max].shape[:2])
@@ -183,17 +190,8 @@ class Stitcher():
             res_array = np.zeros(img.shape[:2])
             res_array[y_min:y_max, x_min:x_max] = det
 
-            # if self.config.debug:
-            #     img_array = (res_array - res_array.min()) / (res_array.max() - res_array.min())  # Normalize to 0-1
-            #     img_array = (img_array * 255).astype(np.uint8)  # Scale to 0-255 and convert to uint8
-            #     cv.imwrite(f'plots/det_{key}.jpg', img_array)
-
-            # # Cummulative evaluation
-            # dets.append(res_array)
-            # masks.append(mask)
-
             # Stack previous best values and current
-            res_array[~mask[:,:,0]] = np.inf
+            res_array[~shrunk_mask[:,:,0]] = np.inf
             stacked_val = np.stack([res_array, val_accum], axis=0)
             # compare them
             compare_idxs = np.abs(stacked_val - 1).argmin(axis=0)
@@ -201,94 +199,68 @@ class Stitcher():
             # select where the current was better
             accum_mask = compare_idxs == 0
             # Update accumulaotrs
-            idx_accum[accum_mask & mask[:,:,0]] = int(key)
+            idx_accum[accum_mask & shrunk_mask[:,:,0]] = int(key)
             val_accum[accum_mask] = res_array[accum_mask]
 
         best_image_index = idx_accum
-        # Get seam line
-        seam = self.seam_gradient(best_image_index)
-        # Get distance from seam
-        seam_dist = 1 - self.calc_seam_dist(seam, k=100)
-
-        seam_mask = np.where(seam_dist > 0, 1, 0)[:,:,0]
-        cv.imwrite("./plots/seam_dist.jpg", seam_dist * 255)
 
         h, w = best_image_index.shape[:2]
         final_img = np.zeros((h, w, 3))
         final_mask = np.zeros((h, w), dtype=bool)
         cumulative_inter = np.zeros((h, w), dtype=int)
 
+        weights = []
+        list_images = []
         for key, val in imgs.items():
             if key == 0:
                 continue
 
             best_image_mask = best_image_index == int(key)
 
-
-            final_mask_dist = self.edge_weights(final_mask.astype(int))
-
-
-            final_img[~final_mask] = val[0][~final_mask]
-
-            final_mask = final_mask | best_image_mask
+            weight = 1 - self.calc_border_dist(best_image_mask, k=50)[:, :, 0]
+            weights.append(weight.astype(np.float16))
 
 
-            # cv.imwrite(f"./plots/final_img_{key}.jpg", final_img)
-            # cv.imwrite(f"./plots/cum_mask{key}.jpg", cumulative_mask * 255)
-            # cv.imwrite(f"./plots/cum_inter{key}.jpg", cumulative_inter * 255)
+        list_images = [value[0] for key, value in imgs.items() if key not in [0]]
 
-            #Mask for blending (where cumulative mask and current mask overlap)
-        return final_img
-
-    # weight_best = self.calc_seam_dist(best_mask.astype(int))
-    # weight_best = 1 - weight_best
-    #
-    # weight_final = self.calc_seam_dist(cumulative_mask)
-    # weight_final = 1 - weight_final
-    #
-    # # blend_sum = weight_best + weight_final
-    # # weight_best /= blend_sum
-    # # weight_final /= blend_sum
-    #
-    #
-    # cv.imwrite(f"./plots/best_blend_{key}.jpg", weight_best * 255)
-    # cv.imwrite(f"./plots/final_blend_{key}.jpg", weight_final * 255)
-    #
-    # inter = (val[1][:,:,0] & cumulative_inter).astype(bool)
-    # cv.imwrite(f"./plots/inter_{key}.jpg", inter * 255)
-    # final_img[inter] = final_img[inter] * (1- weight_best)[inter] + val[0][inter] * weight_best[inter]
-    #
-    #
-    # final_img[best_mask & ~inter] = val[0][best_mask & ~inter]
-    #
-    # cumulative_mask = cumulative_mask | best_mask
-    # cumulative_inter = cumulative_inter | val[1][:,:,0]
-    #
-    # cv.imwrite(f"./plots/final_img_{key}.jpg", final_img)
-    # cv.imwrite(f"./plots/cum_mask{key}.jpg", cumulative_mask * 255)
-    # cv.imwrite(f"./plots/cum_inter{key}.jpg", cumulative_inter * 255)
-    #
-    # Mask for blending (where cumulative mask and current mask overlap)
-
-    def edge_weights(self, img):
-        # Calculate the average distance through edge
-        inner = self.calc_seam_dist(img, k=100, type=cv.THRESH_BINARY)
-        inner = np.minimum(inner, 1)
-
-        outer = self.calc_seam_dist(img, k=100, type=cv.THRESH_BINARY_INV)
-        outer = (1 - np.minimum(outer, 1)) - 1
-        normalized = cv.normalize(inner + outer, None, 0.0, 1.0, cv.NORM_MINMAX, dtype=cv.CV_32F)
-        return normalized
+        final_image = self.blend_weighted_images(list_images, weights)
+        cv.imwrite("./plots/weighted_img.jpg", final_image )
+        return final_image
 
 
-    def calc_seam_dist(self, seam, k = 100, type=cv.THRESH_BINARY_INV):
+
+    def blend_weighted_images(self, images, weights):
+
+        # Convert images to float16 for blending
+        images = [img.astype(np.float32) for img in images]
+        weights = [w.astype(np.float32) for w in weights]
+
+        # Expand weight maps to match image channels (if grayscale)
+        weights = [w[..., np.newaxis] if w.ndim == 2 else w for w in weights]
+
+        # Compute the total weight per pixel (sum of all weights)
+        total_weight = sum(weights)
+
+        # Avoid division by zero (set total_weight to 1 where it's 0)
+        total_weight = np.clip(total_weight, 1e-8, None)
+
+        # Compute the final weighted sum
+        weighted_sum = sum(img * w for img, w in zip(images, weights))
+
+        # Normalize the final image
+        final_image = weighted_sum / total_weight
+
+        # Convert back to uint8
+        final_image = np.clip(final_image, 0, 255).astype(np.uint8)
+
+        return final_image
+
+
+    def calc_border_dist(self, seam, k = 100, type=cv.THRESH_BINARY_INV):
         seam = np.array(seam * 255, dtype=np.uint8)
         _, thresh = cv.threshold(seam, 127, 255, type)
-        seam_dist = cv.distanceTransform(thresh, cv.DIST_L2, 3)
+        seam_dist = cv.distanceTransform(thresh, cv.DIST_L2, 0)
         seam_dist = seam_dist / k
-        #seam_dist = cv.normalize(seam_dist, None, 0, 1.0, cv.NORM_MINMAX)
-        #seam_dist = np.minimum(np.exp(np.power(k*seam_dist,2)) - 1, 1)
-        #seam_dist = np.minimum(-1.05 * np.exp(-k * seam_dist**2) + 1.05, 1)
         seam_dist = np.minimum(seam_dist, 1)
         seam_dist = np.stack([seam_dist] * 3, axis=-1)
         return seam_dist

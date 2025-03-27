@@ -26,6 +26,9 @@ optical:
   # For debugging
   viz_patch: [13]
 
+stitcher:
+  blend_width: 100
+
 
 data:
   img_overview: 0.JPG
