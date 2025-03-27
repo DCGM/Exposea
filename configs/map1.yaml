@@ -1,31 +1,36 @@
-# By default hydra changes working dir, this PREVENTS that
-hydra:
-  run:
-    dir: .
+debug: True # To output global debug values
 
-debug: True
-stitch_type: actual
-
+# Parameters regarding homography estimation
 homog:
   type: default
   feature_extractor: SuperPoint
   feature_matcher: LightGlue
   do_optimization: False
-  max_kpts: 4096
-  max_matches: 200
-  optimizer: marek
-  debug: True
-  load_homog: opt_hom_20250319_125853.pkl
+  max_matches: 200 # Max points to match
+  optimizer: marek # Type of optimization
 
+  # Preload saved homographies
+  load: # Path to homog
+  save: True
+  debug: True
+
+# Parameters regarding optical flow estimation
 optical:
   model: memflow_t
   checkpoint: sintel
-  input_size: [540, 960]
-  patch_overlap: [20,20]
-  subsample_factor: # [1,1]
-  load_flows: flows_20250322_233659.pkl
-  # For debugging
-  viz_patch: [13]
+  input_size: [540, 960] # Size of input patches for model
+  patch_overlap: [40,40] # Overlap of input patches
+  subsample_factor: # [1,1] TODO Not working
+
+  # Load saved flows
+  load: # Path to flow
+  save: True
+  debug: True
+
+# Parameters regarding stitching
+stitcher:
+  mode: actual
+  blend_width: 100
 
 
 data:
@@ -33,3 +38,9 @@ data:
   img_folder: "imgs/example1"
   img_pairs: [[0,1],[0,2],[0,3],[0,4],[0,5],[0,6],[0,7]]
   final_res: [6400, 8400]
+
+# Hydra exec dir to project dir
+hydra:
+  run:
+    dir: .
+

@@ -1,103 +1,152 @@
-from multiprocessing.util import debug
-
-import cv2 as cv
 import os
 import hydra
-import numpy as np
 import pickle
-
 import torch.cuda
-import tqdm
-import copy
 import datetime
+import logging
 
 from HomogEst import HomogEstimator
 from Stitcher import Stitcher
 from Optical import OpticalFlow
 from LightEqual import *
 
-class CustomError(Exception):
-    """Custom exception with a message."""
-    def __init__(self, message):
-        super().__init__(message)
-
-class StichApp():
+class StitchApp():
 
     def __init__(self, config):
-        # File with all the configurations
+
         self.config = config
         self.pairs = config.data.img_pairs
-        self.debug = config.debug
+
+        # TODO Change
         # Initialize homography estimator
-        self.homog_estimator = None
-        self.init_homog_est()
-        # Load images paths
-        self.load_image_paths(True)
-        self.stitcher = Stitcher(config, debug=True)
-        # Optical flow initialization
-        self.optical = OpticalFlow(config)
-
-
-    def init_homog_est(self):
         if self.config.homog.type == "default":
             self.homog_estimator = HomogEstimator(self.config)
         else:
-            raise CustomError("Homography estimator type not implemented. Available types: default")
+            raise ValueError("Homography estimator type not implemented. Available types: default")
+
+        # Optical flow initialization
+        self.optical = OpticalFlow(config)
+        # Main stitcher
+        self.stitcher = Stitcher(config, debug=True)
+
+        # Load images paths
+        self.load_image_paths(True)
+
+        # debug printouts
+        self.debug = self.config.debug
+
+    def run(self):
+        """
+        Runs the main stitch app.
+        """
+        if self.debug:
+            print("Torch cuda", torch.cuda.is_available())
+
+        # Make sure that the overview image is in final resolution
+        # TODO Change this
+        self.resize_reference()
+
+        # Estimate homographies
+        logging.info("Estimating homographies")
+        homographies = self.run_homog()
+
+        # Apply the homography
+        logging.info("Warping images with estimated homography")
+        warped_images = self.stitcher.warp_images(homographies, self.img_paths, self.pairs)
+
+        # Stitch the images for debug output
+        if self.debug:
+            stitched = self.stitcher.blend("weighted", args=warped_images)
+            cv.imwrite("./plots/final_stitch.jpg", stitched)
+
+        # Warp images with optical flow
+        logging.info("Estimating optical flow")
+        ref = warped_images[0]
+        flow_warped_images = self.run_flow(warped_images)
+        # Del due to memory consumption
+        del warped_images
+
+        logging.info("Adjusting light")
+        light_adjusted = self.run_light_equal(ref, flow_warped_images)
+        # Del due to memory consumption
+        del flow_warped_images
+
+        logging.info("Stitching actual image")
+        # Flow Stitch
+        stitched = self.stitcher.blend(self.config.stitcher.mode, args={"imgs":light_adjusted, "Hs":homographies })
+        cv.imwrite("./plots/final_flow_stitch.jpg", stitched)
+
+    def run_homog(self):
+        """
+        Runs the homography estimation
+        If save in config it saves the homographies
+        Returns:
+
+        """
+        # Load or estimate homographies
+        if self.config.homog.load:
+            with open(self.config.homog.load, "rb") as f:
+                homographies = pickle.load(f)
+        else:
+            # The img paths is sent to load the images in correct format for feature extraction and matching
+            homographies = self.homog_estimator.register(self.img_paths)
+            if self.config.homog.save:
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                with open(f"opt_hom_{timestamp}.pkl", "wb") as f:
+                    pickle.dump(homographies, f)
+
+        return homographies
+
+    def run_flow(self, warped_images):
+        """
+        Runs the flow estimation
+        Args:
+            warped_images (dict): Dict of homography warped images {name: (image, mask)}
+
+        Returns:
+        """
+        # Store or load flows
+        if self.config.optical.load:
+            with open(self.config.optical.load, "rb") as f:
+                flow_warped_images = pickle.load(f)
+        else:
+            flow_warped_images = self.run_optical_flow(warped_images)
+            # Save flows if needed
+            if self.config.homog.save:
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                with open(f"flows_{timestamp}.pkl", "wb") as f:
+                    pickle.dump(flow_warped_images, f)
+
+        return flow_warped_images
+
+    def run_light_equal(self, ref, flow_warped_images):
+        """
+        Runs the flow estimation
+        Args:
+            ref (tuple): Reference image and its mask
+            flow_warped_images (dict): Dict of flow warped images {name: (image, mask)}
+
+        Returns:
+        """
+        # Equalize light
+        flow_warped_images[0] = ref
+        light_adjusted = equalize(flow_warped_images, config=self.config)
+        light_adjusted[0] = ref
+
+        return light_adjusted
+
 
     def resize_reference(self):
+        """
+        Resizes the reference image to final resolution
+        Returns:
+        """
         p = os.path.join(str(self.config.data.img_folder), str(self.config.data.img_overview))
         ref = cv.imread(p)
         h, w =  self.config.data.final_res
         ref = cv.resize(ref, (w,h), interpolation=cv.INTER_CUBIC)
         cv.imwrite(p, ref)
 
-    def run(self):
-        """
-        Runs the stitching function in correct order
-        :return:
-        """
-        print("Torch cuda", torch.cuda.is_available())
-
-        # Make sure that the overview image is in final resolution
-        # TODO Change this
-        self.resize_reference()
-
-        print("Estimating homographs")
-        # Load or estimate homographies
-        if self.config.homog.load_homog:
-            with open(self.config.homog.load_homog, "rb") as f:
-                homographies = pickle.load(f)
-        else:
-            homographies = self.homog_estimator.register(self.img_paths)
-
-        # Apply the homography
-        print("Warping and saving images with estimated homography")
-        warped_images = self.stitcher.warp_images(homographies, self.img_paths, self.pairs)
-        # Stitch the images for debug output
-        stitched = self.stitcher.blend("weighted", args=warped_images)
-        cv.imwrite("./plots/final_stitch.jpg", stitched)
-        # Warp images with optical flow
-        ref = warped_images[0]
-
-        # Store or load flows for debug
-        if self.config.optical.load_flows:
-            with open(self.config.optical.load_flows, "rb") as f:
-                flow_warped_images = pickle.load(f)
-        else:
-            flow_warped_images = self.run_optical_flow(warped_images)
-            if self.config.debug:
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                with open(f"flows_{timestamp}.pkl", "wb") as f:
-                    pickle.dump(flow_warped_images, f)
-
-        # Equalize light
-        flow_warped_images[0] = ref
-        light_adjusted = equalize(flow_warped_images)
-        light_adjusted[0] = ref
-        # Flow Stitch
-        stitched = self.stitcher.blend(self.config.stitch_type, args={"imgs":light_adjusted, "Hs":homographies })
-        #stitched = self.stitcher.blend("weighted", args=warped_images)
-        cv.imwrite("./plots/final_flow_stitch.jpg", stitched)
 
     def load_image_paths(self, sort):
 
@@ -108,7 +157,7 @@ class StichApp():
             ov_img_p = os.path.join(self.config.data.img_folder, overview_name)
             self.ov_img_cv = cv.imread(ov_img_p)
         else:
-            raise CustomError("Overview image not found")
+            raise ValueError("Overview image not found")
         if sort:
             img_names = sorted(img_names, key=lambda x: int(x.split('.')[0]))
 
@@ -139,10 +188,10 @@ class StichApp():
         pass
 
 
-# Lauch the application for stitching the image
-@hydra.main(version_base=None, config_path="configs", config_name="cave1")
+# Launch the application for stitching the image
+@hydra.main(version_base=None, config_path="configs", config_name="debug")
 def main(config):
-    app = StichApp(config)
+    app = StitchApp(config)
     app.run()
 
 if __name__ == "__main__":

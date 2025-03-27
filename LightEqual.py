@@ -60,7 +60,7 @@ class SpatialLightParams(nn.Module):
 
 
 
-def equalize(imgs, grid_size=32, mode=["scale"], loss="mse", num_iters=100, lr=0.1, optimizer="LBFGS"):
+def equalize(imgs, config):
     """
     Main function that iterates over all fragments to equalize them with regards to reference
     :param
@@ -85,8 +85,7 @@ def equalize(imgs, grid_size=32, mode=["scale"], loss="mse", num_iters=100, lr=0
         # Normalize fragment
         norm_frag = img.astype(np.float32) / 255.0
         # Light optimization
-        frag_adj = spatial_light_adjustment(norm_frag, ref_norm, mask, grid_size=grid_size, mode=mode, loss=loss,
-                                            num_iters=num_iters, lr=lr, optimizer=optimizer)
+        frag_adj = spatial_light_adjustment(norm_frag, ref_norm, mask, config)
 
         # Rescale it back to 255
         frag_adj = np.asarray(frag_adj * 255.0, dtype=np.uint8)
@@ -97,18 +96,14 @@ def equalize(imgs, grid_size=32, mode=["scale"], loss="mse", num_iters=100, lr=0
 
 
 
-def spatial_light_adjustment(fragment, reference, mask, grid_size=16, mode=["scale"], loss="mse",
-                             optimizer="LBFGS", num_iters=100, lr=0.1):
+def spatial_light_adjustment(fragment, reference, mask, config):
     """
         Adjust the lighting of a fragment image to match a reference image with spatially varying correction.
         :param
            fragment: Fragment image (H, W, C) normalized to [0, 1].
            reference: Reference image (H, W, C) normalized to [0, 1].
            mask : Binary mask (H, W, C) indicating valid overlap region.
-           grid_size (int): Resolution of the learned parameters.
-           mode (str): "scale" for gamma correction or "affine" for alpha-beta correction.
-           num_iters (int): Number of optimization iterations.
-           lr (float): Learning rate for optimization.
+           config: Configuration object containing all configuration parameters.
 
        :return
            adjusted: CV Image with adjusted lighting correction.
@@ -116,9 +111,10 @@ def spatial_light_adjustment(fragment, reference, mask, grid_size=16, mode=["sca
 
     device = torch.cuda.current_device()
 
-    method = SpatialLightParams(grid_size=grid_size, mode=mode)
+    method = SpatialLightParams(grid_size=config.stitcher.grid_size, mode=config.stitcher.optim_mode)
     method.to(device)
 
+    loss = config.stitcher.loss_type
     if loss == "mse":
         loss_fn = torch.nn.MSELoss()
     elif loss == "l1":
@@ -141,14 +137,14 @@ def spatial_light_adjustment(fragment, reference, mask, grid_size=16, mode=["sca
         logging.info(f"Initial loss: {loss.item():.4f}")
         del loss
 
-    if optimizer == 'adam':
+    if config.stitcher.optimizer == 'adam':
         # Initialize the optimizer
-        optimizer = torch.optim.Adam(method.parameters(), lr=lr)
+        optimizer = torch.optim.Adam(method.parameters(), lr=config.stitcher.lr)
 
         # Progress bar
-        pbar = tqdm.tqdm(total=num_iters)
+        pbar = tqdm.tqdm(total=config.stitcher.num_iters)
 
-        for i in range(num_iters):
+        for i in range(config.stitcher.num_iters):
             optimizer.zero_grad()
             # Upsample the correction map to full resolution
             adjusted_fragment = method.interpolate(frag)
@@ -159,13 +155,17 @@ def spatial_light_adjustment(fragment, reference, mask, grid_size=16, mode=["sca
             pbar.update(1)
 
 
-    if optimizer == "LBFGS":
+    if config.stitcher.optimizer == "LBFGS":
         # Initialize the optimizer
-        optimizer = torch.optim.LBFGS(method.parameters(), lr=lr, max_iter=num_iters, line_search_fn="strong_wolfe",
-                                      tolerance_grad= 1e-12, tolerance_change=1e-12)
+        optimizer = torch.optim.LBFGS(method.parameters(),
+                                      lr=config.stitcher.lr,
+                                      max_iter=config.stitcher.optim_steps,
+                                      line_search_fn="strong_wolfe",
+                                      tolerance_grad= 1e-12,
+                                      tolerance_change=1e-12)
 
         # Progress bar
-        pbar = tqdm.tqdm(total=num_iters)
+        pbar = tqdm.tqdm(total=config.stitcher.optim_steps)
         def closure():
             optimizer.zero_grad()
             # Upsample the correction map to full resolution

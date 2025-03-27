@@ -1,17 +1,11 @@
-import os
-
-import numpy as np
-from lightglue.utils import load_image, rbd, numpy_image_to_torch
+from lightglue.utils import load_image, rbd
 import cv2 as cv
 import os
-from Stitcher import Stitcher
 from lightglue import viz2d
 from marek.homography_optimalizer import *
-from lightglue import LightGlue, SuperPoint, DISK
+from lightglue import LightGlue, SuperPoint
 import torch
-import datetime
-from omegaconf import ListConfig, OmegaConf
-import pickle
+from omegaconf import OmegaConf
 
 def load_imgs(img_paths):
     # Load images in super point and light glue format
@@ -22,7 +16,6 @@ def load_imgs(img_paths):
         img = load_image(p)
         imgs[int(filename)] = img
     return imgs
-
 
 def _save_debug_imgs(dat1, dat2, matches, path="./plots/matches.jpg"):
     axes = viz2d.plot_images([dat1[0], dat2[0]], adaptive=False, dpi=500)
@@ -44,16 +37,13 @@ class HomogEstimator:
     def __init__(self, config):
         self.config = config
         # Init feature extractor
-
         torch.set_grad_enabled(False)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.extractor = SuperPoint(max_num_keypoints=4096).eval().to(self.device)
-
-        #self.extractor = SuperPoint(max_num_keypoints=2048).eval().to(self.device)
-
+        self.extractor = SuperPoint(max_num_keypoints=config.homog.max_feat_points).eval().to(self.device)
         # Init feature matcher
         self.matcher = LightGlue(features="superpoint").eval().to(self.device)
+
         # Init optimizer
         if config.homog.do_optimization:
             print("Loading optimizer :", config.homog.optimizer)
@@ -61,12 +51,19 @@ class HomogEstimator:
                 self.homog_opt = HomographyOptimizer(max_matches=config.homog.max_matches)
             else:
                 raise NotImplementedError
+
         self.debug = config.homog.debug
         self.pairs = OmegaConf.to_container(config.data.img_pairs)
         self.images = None
 
     def register(self, img_paths: np.ndarray):
+        """
+        Main function that handles registration
+        Args:
+            img_paths:
+        Returns:
 
+        """
         # Load images
         self.images = load_imgs(img_paths)
         # Register images by pair returns homography and corresponding points for each pair
@@ -89,12 +86,6 @@ class HomogEstimator:
             # Run optimization
             homographies = self.homog_opt.optimize(self.pairs, hom_list, correspondences)
             # Save optimized homographies
-        if self.debug:
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            with open(f"opt_hom_{timestamp}.pkl", "wb") as f:
-                pickle.dump(homographies, f)
-
-        # opt_hom = self.warp_images(opt_hom)
         return homographies
 
     def match_feat_pairs(self, feats1, feats2):
@@ -132,7 +123,7 @@ class HomogEstimator:
         m_kpts1, m_kpts2 = kpts1[matches[..., 0]], kpts2[matches[..., 1]]
 
         # Save image with matched features
-        if self.debug:
+        if self.config.homog.debug:
             _save_debug_imgs([self.images[pair[0]], m_kpts1, kpts1],
                              [self.images[pair[1]], m_kpts2, kpts2],
                              matches12,
@@ -141,16 +132,6 @@ class HomogEstimator:
                             [self.images[pair[1]], m_kpts2, kpts2],
                             path=f"./plots/kpts_{pair[0]}_{pair[1]}.jpeg")
 
-            # # Initialize SIFT detector
-            # sift = cv.SIFT_create()
-            #
-            # # Detect keypoints and compute descriptors
-            # keypoints1, _ = sift.detectAndCompute(self.images[pair[0]], None)
-            # keypoints2, _ = sift.detectAndCompute(self.images[pair[1]], None)
-
-            # _save_key_imgs([self.images[pair[0]], m_kpts1, keypoints1],
-            #                [self.images[pair[1]], m_kpts2, keypoints2],
-            #                path=f"./plots/sift_kpts_{pair[0]}_{pair[1]}.jpeg")
 
         if len(np.asarray(m_kpts2.cpu())) < 10 or len(np.asarray(m_kpts1.cpu())) < 10:
             print("Not enough points")
@@ -159,7 +140,7 @@ class HomogEstimator:
         H, mask = cv.findHomography(np.asarray(m_kpts2.cpu()), np.asarray(m_kpts1.cpu()), cv.RANSAC, 5.0)
         return H, mask, (np.asarray(m_kpts2.cpu()), np.asarray(m_kpts1.cpu()))
 
-    # TODO rework
+
     def normalize_homographies(self, homographies, ref_idx=0):
 
         global_homographies = {ref_idx: np.eye(3)}
