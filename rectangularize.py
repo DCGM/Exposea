@@ -3,7 +3,7 @@ import numpy as np
 
 # Load the image
 NAME = '0.JPG'
-image = cv2.imread(f'imgs/overviews/{NAME}')
+image = cv2.imread(f'imgs/example5/{NAME}')
 if image is None:
     raise ValueError("Image not found or unable to load.")
 

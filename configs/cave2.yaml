@@ -1,33 +1,43 @@
-hydra:
-  run:
-    dir: .
+debug: True # To output global debug values
 
-debug: True
-
-stitch_type: actual
-
+# Parameters regarding homography estimation
 homog:
   type: default
   feature_extractor: SuperPoint
+  max_feat_points: 8000
   feature_matcher: LightGlue
   do_optimization: False
-  max_kpts: 4096
-  max_matches: 200
-  optimizer: marek
-  debug: True
-  load_homog:
+  max_matches: 200 # Max points to match
+  optimizer: marek # Type of optimization
 
+  # Preload saved homographies
+  load:
+  save: True
+  debug: False
+
+# Parameters regarding optical flow estimation
 optical:
-  model: memflow
+  model: memflow_t
   checkpoint: sintel
-  input_size: [540, 960]
-  subsample_factor: # [1,1]
-  patch_overlap: [10,10]
-  load_flows: #flows_20250303_132624.pkl
+  input_size: [540, 960] # Size of input patches for model
+  patch_overlap: [40,40] # Overlap of input patches
+  subsample_factor: # [1,1] TODO Not working
 
-  # For debugging
-  viz_patch: [13]
+  # Load saved flows
+  load: # Path to flow
+  save: False
+  debug: False
 
+# Parameters regarding stitching
+stitcher:
+  mode: actual
+  grid_size: 32
+  optim_mode: ["scale"]
+  optimizer: "LBFGS"
+  loss_type: "mse"
+  lr: 0.1
+  optim_steps: 50
+  blend_width: 100
 
 data:
   img_overview: 0.JPG

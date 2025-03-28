@@ -116,7 +116,6 @@ class Stitcher():
 
     def blend_actual(self, args):
 
-
         Hs = args['Hs']
         imgs = args['imgs']
 

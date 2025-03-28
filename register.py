@@ -189,7 +189,7 @@ class StitchApp():
 
 
 # Launch the application for stitching the image
-@hydra.main(version_base=None, config_path="configs", config_name="debug")
+@hydra.main(version_base=None, config_path="configs", config_name="cave4")
 def main(config):
     app = StitchApp(config)
     app.run()
