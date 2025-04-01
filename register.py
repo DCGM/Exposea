@@ -57,7 +57,7 @@ class StitchApp():
         # Stitch the images for debug output
         if self.debug:
             stitched = self.stitcher.blend("weighted", args=warped_images)
-            cv.imwrite("./plots/final_stitch.jpg", stitched)
+            cv.imwrite("./plots/homog_stitch.jpg", stitched)
 
         # Warp images with optical flow
         logging.info("Estimating optical flow")
@@ -65,6 +65,12 @@ class StitchApp():
         flow_warped_images = self.run_flow(warped_images)
         # Del due to memory consumption
         del warped_images
+
+        # # Stitch the images for debug output
+        # if self.debug:
+        #     stitched = self.stitcher.blend(self.config.stitcher.mode, args={"imgs":flow_warped_images, "Hs":homographies })
+        #     cv.imwrite("./plots/flow_stitch.jpg", stitched)
+
 
         logging.info("Adjusting light")
         light_adjusted = self.run_light_equal(ref, flow_warped_images)
@@ -189,7 +195,7 @@ class StitchApp():
 
 
 # Launch the application for stitching the image
-@hydra.main(version_base=None, config_path="configs", config_name="cave4")
+@hydra.main(version_base=None, config_path="configs", config_name="cave1")
 def main(config):
     app = StitchApp(config)
     app.run()

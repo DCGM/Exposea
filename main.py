@@ -222,4 +222,3 @@ if __name__ == "__main__":
     ov = cv.imread("./imgs/example1/0.JPG")
     ov = cv.resize(ov, (8400, 6400))
     cv.imwrite("./imgs/example1/0.JPG", ov)
->>>>>>> 9bbc8bc (Initial commit)

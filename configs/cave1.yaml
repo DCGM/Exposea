@@ -11,7 +11,7 @@ homog:
   optimizer: marek # Type of optimization
 
   # Preload saved homographies
-  load:
+  load: ./opt_hom_20250331_115346.pkl
   save: True
   debug: False
 
@@ -24,7 +24,7 @@ optical:
   subsample_factor: # [1,1] TODO Not working
 
   # Load saved flows
-  load: # Path to flow
+  load: ./flows_20250331_120548.pkl # Path to flow
   save: False
   debug: False
 
@@ -37,6 +37,7 @@ stitcher:
   loss_type: "mse"
   lr: 0.1
   optim_steps: 50
+  num_iters: 50
   blend_width: 100
 
 data:
