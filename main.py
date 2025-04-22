@@ -1,85 +1,13 @@
-<<<<<<< HEAD
 
 import pickle
 import numpy as np
 import cv2 as cv
-if __name__ == "__main__":
+import torch
 
-    def compute_jacobian_determinant(H, shape):
-        """Computes the Jacobian determinant for each pixel after applying homography H."""
-        h, w = shape[:2]
+print(torch.cuda.is_available())
 
-        # Generate a grid of pixel coordinates
-        x, y = np.meshgrid(np.arange(w), np.arange(h))
-        ones = np.ones_like(x)
+from torchvision.ops import nms
 
-        # Convert to homogeneous coordinates
-        coords = np.stack([x, y, ones], axis=-1).reshape(-1, 3).T  # Shape: (3, N)
-
-        # Apply homography to get transformed coordinates
-        transformed_coords = H @ coords
-        transformed_coords /= transformed_coords[2]  # Normalize homogeneous coordinates
-
-        x_prime = transformed_coords[0].reshape(h, w)
-        y_prime = transformed_coords[1].reshape(h, w)
-
-        # Compute partial derivatives to get the Jacobian matrix
-        dx_dx, dx_dy = np.gradient(x_prime, axis=(0, 1))  # Partial derivatives of x'
-        dy_dx, dy_dy = np.gradient(y_prime, axis=(0, 1))  # Partial derivatives of y'
-
-        # Compute determinant of the Jacobian matrix at each pixel
-        J_det = dx_dx * dy_dy - dx_dy * dy_dx  # det(J)
-
-        return J_det
-
-    def comp_jacobian(H, shape):
-        h, w = shape[:2]
-        # Create grid of (x, y) coordinates
-        x, y = np.meshgrid(np.arange(w), np.arange(h))
-        ones = np.ones_like(x)
-        coords = np.stack([x, y, ones], axis=-1).reshape(-1, 3).T
-
-        # Apply homography to get (x', y', w')
-        warped = H @ coords
-        w_prime = warped[2]
-        x_prime = warped[0] / w_prime
-        y_prime = warped[1] / w_prime
-
-        # Compute partial derivatives numerically (finite differences)
-        dx = 1e-5  # Small step for numerical derivative
-        coords_dx = np.stack([x + dx, y, ones], axis=-1).reshape(-1, 3).T
-        warped_dx = H @ coords_dx
-        x_prime_dx = warped_dx[0] / warped_dx[2]
-        y_prime_dx = warped_dx[1] / warped_dx[2]
-
-        coords_dy = np.stack([x, y + dx, ones], axis=-1).reshape(-1, 3).T
-        warped_dy = H @ coords_dy
-        x_prime_dy = warped_dy[0] / warped_dy[2]
-        y_prime_dy = warped_dy[1] / warped_dy[2]
-
-        # Jacobian components
-        dx_prime_dx = (x_prime_dx - x_prime) / dx
-        dx_prime_dy = (x_prime_dy - x_prime) / dx
-        dy_prime_dx = (y_prime_dx - y_prime) / dx
-        dy_prime_dy = (y_prime_dy - y_prime) / dx
-
-        # Jacobian determinant
-        det_J = dx_prime_dx * dy_prime_dy - dx_prime_dy * dy_prime_dx
-        return det_J
-
-    with open("opt_hom_20250228_164634.pkl", "rb") as f:
-        homographies = pickle.load(f)
-    H =  homographies[13]
-    shape = (600,800)
-
-    J_det2 = comp_jacobian(H, shape)
-    J_det = compute_jacobian_determinant(H, shape)
-    img_array = (J_det - J_det.min()) / (J_det.max() - J_det.min())  # Normalize to 0-1
-    img_array = (img_array * 255).astype(np.uint8)  # Scale to 0-255 and convert to uint8
-
-    # Save to file
-    cv.imwrite('output_image_cv2.png', img_array)
-=======
 from lightglue import LightGlue, SuperPoint, DISK
 from lightglue.utils import load_image, rbd
 from lightglue import viz2d

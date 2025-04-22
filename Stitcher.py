@@ -9,6 +9,7 @@ Author: Ing. David Pukanec
 
 import cv2 as cv
 import numpy as np
+from memory_profiler import profile
 
 class Stitcher():
     """
@@ -48,12 +49,14 @@ class Stitcher():
         for i, path in enumerate(img_paths):
             # Load the image
             img = cv.imread(path)
+            masking_array = np.ones_like(img, np.uint8)
             # Calculate the homography
             H = translation @ global_homographies[i]
             # Apply warping based on homography
             warped = cv.warpPerspective(img, H, (x_max - x_min, y_max - y_min))
+            mask = cv.warpPerspective(masking_array, H, (x_max - x_min, y_max - y_min))
             # Mask
-            mask = (warped > 0)
+            mask = (mask > 0)
             warped_list[i] = [warped, mask]
 
         # Warp images based on pairs and apply the same translation and homography transformation
@@ -63,10 +66,12 @@ class Stitcher():
             i += 1
             path = img_paths[pair[1]]
             img = cv.imread(path)
+            masking_array = np.ones_like(img, np.uint8)
             H = translation @ global_homographies[i]
             # Apply warping based on homography
             warped = cv.warpPerspective(img, H, (x_max - x_min, y_max - y_min))
-            mask = (warped > 0)
+            mask = cv.warpPerspective(masking_array, H, (x_max - x_min, y_max - y_min))
+            mask = (mask > 0)
             warped_list[i] = [warped, mask]
 
         return warped_list
@@ -113,7 +118,25 @@ class Stitcher():
         J_det = dx_dx * dy_dy - dx_dy * dy_dx  # det(J)
         return J_det
 
+    def save_idx_acum(self, idx_accum):
+        max_idx = int(np.max(idx_accum))
+        idx_accum[idx_accum == -1] = 0
+        idx_accum = idx_accum.astype(np.uint8)
+        idx_accum = idx_accum * np.uint8(254 / max_idx)
+        for i in range(0, max_idx):
+            idx_accum[i * 50: i * 50 + 50, 0: 50] = i * np.uint8(254 / max_idx)
 
+        font = cv.FONT_HERSHEY_SIMPLEX
+        font_scale = 2
+        color = (0, 0, 0)  # Black color in BGR
+        thickness = 3
+        for y_res in range(0 ,200, idx_accum.shape[0]):
+            for x_res in range(0 ,200, idx_accum.shape[1]):
+                cv.putText(idx_accum, str(idx_accum[y_res,x_res]), (y_res, x_res), font, font_scale, color, thickness, cv.LINE_AA)
+
+        cv.imwrite("./plots/idx_accum.jpg", idx_accum)
+
+    @profile
     def blend_actual(self, args):
 
         Hs = args['Hs']
@@ -121,7 +144,7 @@ class Stitcher():
 
         res = (int(self.config.data.final_res[0]), int(self.config.data.final_res[1]))
         idx_accum = np.ones(res) * -1
-        val_accum = np.ones(res) * np.inf
+        val_accum = np.ones(res) * 99999
         eroded_masks = {}
         for key, val in imgs.items():
             # Ignore reference
@@ -129,7 +152,7 @@ class Stitcher():
                 continue
             img = val[0]
             mask = val[1]
-
+            #cv.imwrite(f"./plots/mask_stitch_{key}.jpg", int(mask))
             # Adjust the mask for overlap
             blend_width = self.config.stitcher.blend_width
             eros_kernel = np.ones((2 * blend_width +1, 2 * blend_width +1), np.uint8)
@@ -146,10 +169,12 @@ class Stitcher():
             res_array[y_min:y_max, x_min:x_max] = det
 
             # Stack previous best values and current
-            res_array[~shrunk_mask[:,:,0]] = np.inf
+            res_array[~shrunk_mask[:,:,0]] = 99999
             stacked_val = np.stack([res_array, val_accum], axis=0)
             # compare them
+            # TODO Exponencialny fix
             compare_idxs = np.abs(stacked_val - 1).argmin(axis=0)
+            #compare_idxs = np.argmin(stacked_val, axis=0)
 
             # select where the current was better
             accum_mask = compare_idxs == 0
@@ -158,6 +183,7 @@ class Stitcher():
             val_accum[accum_mask] = res_array[accum_mask]
 
         best_image_index = idx_accum
+        self.save_idx_acum(idx_accum)
         weights = []
 
         for key, val in imgs.items():
@@ -173,7 +199,6 @@ class Stitcher():
         list_images = [value[0] for key, value in imgs.items() if key not in [0]]
 
         final_image = self.blend_weighted_images(list_images, weights)
-        cv.imwrite("./plots/weighted_img.jpg", final_image )
         return final_image
 
     def blend_weighted_images(self, images, weights):
@@ -245,9 +270,6 @@ class Stitcher():
         for key, val in args.items():
             img = val[0]
             mask = val[1]
-            # Do not include overlay img which is at index 0
-            if key == 0:
-                continue
 
             stitched[mask] = stitched[mask] + img[mask]
             acum[mask] += 1
@@ -255,8 +277,7 @@ class Stitcher():
         # Avoid division by 0
         acum_mask = acum > 0
         stitched[acum_mask] = stitched[acum_mask] / acum[acum_mask]
-        if self.debug:
-            cv.imwrite(f"./plots/stitched_weighted.jpg", stitched)
+
         return stitched
 
     def blend_basic(self, args):

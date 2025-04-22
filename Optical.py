@@ -124,7 +124,7 @@ class OpticalFlow:
 
     def estimate_flows(self, warped_images):
         """
-        Estimates the optical flows
+        Estimates the flow on all images in the given dictionary.
         Args:
             warped_images: A dict of shpae {key:(image, mask)} of warped images..
 
@@ -147,17 +147,26 @@ class OpticalFlow:
 
             # Get the overlapping region  for optical flow estimation
             overlap1, overlap2 = self.get_overlap_region(ov_img, frag)
+            assert overlap1.shape == overlap2.shape
 
             _, bin_mask_ov = cv.threshold(cv.cvtColor(overlap1, cv.COLOR_BGR2GRAY), 1, 255, cv.THRESH_BINARY)
-            _, bin_mask_fr = cv.threshold(cv.cvtColor(overlap2, cv.COLOR_BGR2GRAY), 1, 255, cv.THRESH_BINARY)
+            #_, bin_mask_fr = cv.threshold(cv.cvtColor(overlap2, cv.COLOR_BGR2GRAY), 1, 255, cv.THRESH_BINARY)
 
             coords_ov = cv.findNonZero(bin_mask_ov)
-            coords_fr = cv.findNonZero(bin_mask_fr)
+            # coords_fr = cv.findNonZero(bin_mask_fr)
 
             o_x, o_y, o_w, o_h = cv.boundingRect(coords_ov)
             cropped_ov = overlap1[o_y:o_y + o_h, o_x:o_x + o_w]
-            f_x, f_y, f_w, f_h = cv.boundingRect(coords_fr)
-            cropped_fr = overlap2[f_y:f_y + f_h, f_x:f_x + f_w]
+            # f_x, f_y, f_w, f_h = cv.boundingRect(coords_fr)
+            # cropped_fr = overlap2[f_y:f_y + f_h, f_x:f_x + f_w]
+            cropped_fr = overlap2[o_y:o_y + o_h, o_x:o_x + o_w]
+            if self.config.optical.debug:
+                cv.imwrite(f"./plots/cropped_ov_{key}.jpg", cropped_ov)
+                cv.imwrite(f"./plots/cropped_fr_{key}.jpg", cropped_fr)
+
+            if cropped_fr.shape != cropped_ov.shape:
+                raise ValueError("Images must have the same shape.")
+
 
             # Resize the image into computable form for optical flow estimation
             # useful when subsampling is suitable to predict lower amount of fragment patches
@@ -319,3 +328,84 @@ class OpticalFlow:
         overlap2 = cv.bitwise_and(img2_warped, img2_warped, mask=overlap_mask.astype(np.uint8))
 
         return overlap1, overlap2
+
+
+
+    # def extract_patches(self, images, patch_size, overlap):
+    #     """
+    #     Extracts overlapping patches from an image without padding.
+    #     Edge patches reuse pixels from previous ones if necessary.
+    #     """
+    #     img_a, img_b = images
+    #     if img_a.shape != img_b.shape:
+    #         raise ValueError("Images must have the same shape.")
+    #     h, w = img_a.shape[:2]
+    #     m, n = patch_size
+    #     p = overlap
+    #
+    #     stride_y = m - p[0]
+    #     stride_x = n - p[1]
+    #
+    #     patches = []
+    #     positions = []
+    #
+    #     # Iterate over height
+    #     y = 0
+    #     while True:
+    #         if y + m > h:
+    #             y = h - m
+    #         # Iterate over width
+    #         x = 0
+    #         while True:
+    #             if x + n > w:
+    #                 x = w - n
+    #             patch_a = img_a[y:y + m, x:x + n]
+    #             patch_b = img_a[y:y + m, x:x + n]
+    #             patches.append((patch_a, patch_b))
+    #             positions.append((y, x))
+    #             if x + n >= w:
+    #                 break
+    #             x += stride_x
+    #         if y + m >= h:
+    #             break
+    #         y += stride_y
+    #
+    #     return patches, positions
+    #
+    #
+    # def reconstruct_from_patches(self, flow_patches, positions, image_shape, patch_size):
+    #     """
+    #     Reconstructs the full image from overlapping patches.
+    #     Averaging is used for overlapping regions.
+    #     """
+    #     h, w = image_shape[:2]
+    #     m, n = patch_size
+    #
+    #     merged_flow = np.zeros((h, w, 2), dtype=np.float32)
+    #     weight = np.zeros((h, w, 1), dtype=np.float16)
+    #
+    #     for patch, (y, x) in zip(flow_patches, positions):
+    #
+    #         merged_flow[y:y + m, x:x + n] += patch
+    #         weight[y:y + m, x:x + n] += 1
+    #
+    #     weight[weight == 0] = 1  # avoid division by zero
+    #     return merged_flow / weight
+
+
+# # Example usage
+# if __name__ == "__main__":
+#     h, w = 3468, 4624  # Example image size
+#     m, n = 540, 960  # Patch size
+#     p = 32           # Overlap
+#
+#     image = np.random.rand(h, w, 3).astype(np.float32)  # Dummy RGB image
+#
+#     patches, positions = extract_patches(image, (m, n), p)
+#
+#     # Simulate optical flow prediction for each patch (just dummy data here)
+#     predicted_flows = np.random.rand(*patches.shape[:3], 3).astype(np.float32)  # Flow has 2 channels
+#
+#     reconstructed_flow = reconstruct_from_patches(predicted_flows, positions, (h, w), (m, n), p)
+#
+#    print("Reconstructed flow shape:", reconstructed_flow.shape)
