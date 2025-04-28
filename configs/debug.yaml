@@ -1,5 +1,9 @@
 debug: True # To output global debug values
 
+cache:
+  is_on: True
+  path: cache/diskcache/
+  size_mb: 500
 # Parameters regarding homography estimation
 homog:
   type: default
@@ -11,7 +15,7 @@ homog:
   optimizer: marek # Type of optimization
 
   # Preload saved homographies
-  load: homog_debug.pkl
+  load: #homog_debug.pkl
   save: True
   debug: False
 
@@ -24,7 +28,7 @@ optical:
   subsample_factor: # [1,1] TODO Not working
 
   # Load saved flows
-  load: flows_debug.pkl
+  load: #flows_debug.pkl
   save: True
   debug: False
 

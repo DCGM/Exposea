@@ -4,18 +4,26 @@ import pickle
 import torch.cuda
 import datetime
 import logging
+import diskcache
 
 from HomogEst import HomogEstimator
 from Stitcher import Stitcher
 from Optical import OpticalFlow
 from LightEqual import *
 
+
 class StitchApp():
 
     def __init__(self, config):
-
+        # Config file
         self.config = config
+        # Init cache dir
+        if self.config.cache.is_on:
+            self.cache = diskcache.Cache(self.config.cache.cache_path)
+            self.cache.max_size = 1024 * 1024 * self.config.cache.max_size
+
         self.pairs = config.data.img_pairs
+
 
         # TODO Change
         # Initialize homography estimator
@@ -195,7 +203,7 @@ class StitchApp():
 
 
 # Launch the application for stitching the image
-@hydra.main(version_base=None, config_path="configs", config_name="david")
+@hydra.main(version_base=None, config_path="configs", config_name="debug")
 def main(config):
     app = StitchApp(config)
     app.run()
