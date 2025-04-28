@@ -3,7 +3,7 @@ debug: True # To output global debug values
 cache:
   is_on: True
   path: cache/diskcache/
-  size_mb: 500
+  size_mb: 20000
 # Parameters regarding homography estimation
 homog:
   type: default
@@ -42,6 +42,8 @@ stitcher:
   lr: 0.1
   optim_steps: 50
   blend_width: 100
+
+  cache: False
 
 # Parameters regarding stitching
 data:

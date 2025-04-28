@@ -25,7 +25,7 @@ class Stitcher():
         self.config = config
         self.debug = debug
 
-    def warp_images(self, global_homographies, img_paths, pairs):
+    def warp_images(self, global_homographies, img_paths, cache):
         """
         Warps images using global homographies  to align them to a common coordinate system.
 
@@ -45,7 +45,7 @@ class Stitcher():
         translation = np.array([[1, 0, -x_min], [0, 1, -y_min], [0, 0, 1]])
         # TODO [Refactor]
         # Iterate over the image paths and apply warping using the global homographies
-        warped_list = {}
+        ck_warped = []
         for i, path in enumerate(img_paths):
             # Load the image
             img = cv.imread(path)
@@ -57,24 +57,31 @@ class Stitcher():
             mask = cv.warpPerspective(masking_array, H, (x_max - x_min, y_max - y_min))
             # Mask
             mask = (mask > 0)
-            warped_list[i] = [warped, mask]
 
-        # Warp images based on pairs and apply the same translation and homography transformation
-        for i, pair in enumerate(pairs):
-            if 0 in pair:
-                continue
-            i += 1
-            path = img_paths[pair[1]]
-            img = cv.imread(path)
-            masking_array = np.ones_like(img, np.uint8)
-            H = translation @ global_homographies[i]
-            # Apply warping based on homography
-            warped = cv.warpPerspective(img, H, (x_max - x_min, y_max - y_min))
-            mask = cv.warpPerspective(masking_array, H, (x_max - x_min, y_max - y_min))
-            mask = (mask > 0)
-            warped_list[i] = [warped, mask]
+            if cache is not None:
+                # Cache 2 for memory consumption
+                cache_key = f'warped_{i}'
+                cache[cache_key] = [warped, mask]
+                ck_warped.append(cache_key)
+            else:
+                ck_warped.append([warped, mask])
 
-        return warped_list
+        # # Warp images based on pairs and apply the same translation and homography transformation
+        # for i, pair in enumerate(pairs):
+        #     if 0 in pair:
+        #         continue
+        #     i += 1
+        #     path = img_paths[pair[1]]
+        #     img = cv.imread(path)
+        #     masking_array = np.ones_like(img, np.uint8)
+        #     H = translation @ global_homographies[i]
+        #     # Apply warping based on homography
+        #     warped = cv.warpPerspective(img, H, (x_max - x_min, y_max - y_min))
+        #     mask = cv.warpPerspective(masking_array, H, (x_max - x_min, y_max - y_min))
+        #     mask = (mask > 0)
+        #     warped_list[i] = [warped, mask]
+
+        return ck_warped
 
 
     def blend(self, blend_type, args):
@@ -136,14 +143,85 @@ class Stitcher():
 
         cv.imwrite("./plots/idx_accum.jpg", idx_accum)
 
+    def erode_mask(self, mask):
+        # Adjust the mask for overlap
+        blend_width = self.config.stitcher.blend_width
+        eros_kernel = np.ones((2 * blend_width + 1, 2 * blend_width + 1), np.uint8)
+        shrunk_mask = cv.erode(mask.astype(np.uint8), eros_kernel, iterations=1).astype(bool)
+        return shrunk_mask
+
     @profile
     def blend_actual(self, args):
 
         Hs = args['Hs']
-        imgs = args['imgs']
-
+        img_keys = args['imgs']
+        cache = args['cache']
+        # The output resolution
         res = (int(self.config.data.final_res[0]), int(self.config.data.final_res[1]))
+
+        # Accumulator for best img index
         idx_accum = np.ones(res) * -1
+        # Accumulator for closest value to 1
+        val_accum = np.ones(res) * 99999
+
+        for key in img_keys:
+            # Ignore reference
+            if key == 0:
+                continue
+            img, mask = cache[key]
+            # img = val[0]
+            # mask = val[1]
+
+            shrunk_mask = self.erode_mask(mask)
+
+            y_min, x_min = np.argwhere(shrunk_mask[:,:,0]).min(axis=0) # Get min row and column
+            y_max, x_max = np.argwhere(shrunk_mask[:,:,0]).max(axis=0)  # Get max row and column
+
+            # Compute dense jacobian denterminants
+            det = self.compute_jacobian_determinant(Hs[key], img[y_min:y_max, x_min:x_max].shape[:2])
+
+            # Get the determinant inside the image
+            res_array = np.zeros(img.shape[:2])
+            res_array[y_min:y_max, x_min:x_max] = det
+
+            # Stack previous best values and current
+            res_array[~shrunk_mask[:,:,0]] = 99999
+            stacked_val = np.stack([res_array, val_accum], axis=0)
+
+            # Compare current 0 idx, and previus best 1 idx
+            compare_idxs = np.abs(np.log(stacked_val) - 1).argmin(axis=0)
+
+            # Select where the current was better
+            accum_mask = compare_idxs == 0
+
+            # Update accumulators
+            idx_accum[accum_mask & shrunk_mask[:,:,0]] = int(key)
+            val_accum[accum_mask] = res_array[accum_mask]
+
+
+        best_image_index = idx_accum
+        weights = []
+        for key, val in img_keys:
+            if key == 0:
+                continue
+            best_image_mask = best_image_index == int(key)
+
+            weight = 1 - self.calc_border_dist(best_image_mask, k=50)[:, :, 0]
+            weights.append(weight.astype(np.float16))
+
+        list_images = [cache[key][0] for key, value in img_keys.items() if key not in [0]]
+        final_image = self.blend_weighted_images(list_images, weights)
+        return final_image
+
+    def old_blend_actual(self, args):
+
+        Hs = args['Hs']
+        imgs = args['imgs']
+        # The output resolution
+        res = (int(self.config.data.final_res[0]), int(self.config.data.final_res[1]))
+        # Accumulator for best img index
+        idx_accum = np.ones(res) * -1
+        # Accumulator for closest value to 1
         val_accum = np.ones(res) * 99999
         eroded_masks = {}
         for key, val in imgs.items():
@@ -152,15 +230,15 @@ class Stitcher():
                 continue
             img = val[0]
             mask = val[1]
-            #cv.imwrite(f"./plots/mask_stitch_{key}.jpg", int(mask))
+
             # Adjust the mask for overlap
             blend_width = self.config.stitcher.blend_width
-            eros_kernel = np.ones((2 * blend_width +1, 2 * blend_width +1), np.uint8)
+            eros_kernel = np.ones((2 * blend_width + 1, 2 * blend_width + 1), np.uint8)
             shrunk_mask = cv.erode(mask.astype(np.uint8), eros_kernel, iterations=1).astype(bool)
             eroded_masks[key] = shrunk_mask
 
-            y_min, x_min = np.argwhere(shrunk_mask[:,:,0]).min(axis=0) # Get min row and column
-            y_max, x_max = np.argwhere(shrunk_mask[:,:,0]).max(axis=0)  # Get max row and column
+            y_min, x_min = np.argwhere(shrunk_mask[:, :, 0]).min(axis=0)  # Get min row and column
+            y_max, x_max = np.argwhere(shrunk_mask[:, :, 0]).max(axis=0)  # Get max row and column
 
             # Compute dense jacobian denterminants
             det = self.compute_jacobian_determinant(Hs[key], img[y_min:y_max, x_min:x_max].shape[:2])
@@ -169,17 +247,17 @@ class Stitcher():
             res_array[y_min:y_max, x_min:x_max] = det
 
             # Stack previous best values and current
-            res_array[~shrunk_mask[:,:,0]] = 99999
+            res_array[~shrunk_mask[:, :, 0]] = 99999
             stacked_val = np.stack([res_array, val_accum], axis=0)
             # compare them
             # TODO Exponencialny fix
             compare_idxs = np.abs(stacked_val - 1).argmin(axis=0)
-            #compare_idxs = np.argmin(stacked_val, axis=0)
+            # compare_idxs = np.argmin(stacked_val, axis=0)
 
             # select where the current was better
             accum_mask = compare_idxs == 0
             # Update accumulaotrs
-            idx_accum[accum_mask & shrunk_mask[:,:,0]] = int(key)
+            idx_accum[accum_mask & shrunk_mask[:, :, 0]] = int(key)
             val_accum[accum_mask] = res_array[accum_mask]
 
         best_image_index = idx_accum
@@ -194,7 +272,6 @@ class Stitcher():
 
             weight = 1 - self.calc_border_dist(best_image_mask, k=50)[:, :, 0]
             weights.append(weight.astype(np.float16))
-
 
         list_images = [value[0] for key, value in imgs.items() if key not in [0]]
 
@@ -262,14 +339,20 @@ class Stitcher():
         return seam_dist
 
     def blend_weighted(self, args):
+
+        if args['cache'] is not None:
+            cache = args['cache']
+
         x_min, y_min = (0, 0)
         x_max, y_max = (self.config.data.final_res[1], self.config.data.final_res[0])
         stitched = np.zeros((y_max - y_min, x_max - x_min, 3), dtype=np.float32)
         acum = np.zeros((y_max - y_min, x_max - x_min, 3), dtype=np.uint8)
 
-        for key, val in args.items():
-            img = val[0]
-            mask = val[1]
+        for idx, val in enumerate(args["fragments"]):
+            if args['cache'] is not None:
+                img, mask = cache[val]
+            else:
+                img, mask = val
 
             stitched[mask] = stitched[mask] + img[mask]
             acum[mask] += 1

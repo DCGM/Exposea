@@ -7,6 +7,7 @@ from lightglue import LightGlue, SuperPoint
 import torch
 from omegaconf import OmegaConf
 
+
 def load_imgs(img_paths):
     # Load images in super point and light glue format
     imgs = {}
@@ -16,6 +17,10 @@ def load_imgs(img_paths):
         img = load_image(p)
         imgs[int(filename)] = img
     return imgs
+
+def load_img(path):
+    img = load_image(path)
+    return img
 
 def _save_debug_imgs(dat1, dat2, matches, path="./plots/matches.jpg"):
     axes = viz2d.plot_images([dat1[0], dat2[0]], adaptive=False, dpi=500)
@@ -53,8 +58,32 @@ class HomogEstimator:
                 raise NotImplementedError
 
         self.debug = config.homog.debug
-        self.pairs = OmegaConf.to_container(config.data.img_pairs)
+        # self.pairs = OmegaConf.to_container(config.data.img_pairs)
         self.images = None
+
+    def new_register(self, ref_path: str, frag_paths: list[str]):
+        # TODO Switch to this
+        # Get ref img
+        ref_img = load_image(ref_path)
+        # Extract features
+        feats_ref = self.extractor.extract(ref_img.to(self.device))
+
+        # Iterate over fragments and estimate homography
+        homographies = []
+        corrs = []
+        for idx, frag_path in enumerate(frag_paths):
+            # Extract frag features
+            frag_img = load_image(frag_path)
+            feats_frag = self.extractor.extract(frag_img.to(self.device))
+            # Find matches between images
+            matches_a_b = self.matcher({"image0": feats_ref, "image1": feats_frag})
+            # Ger homography from image b to a
+            H, m, mkpts = self.get_homography(feats_ref, feats_frag, matches_a_b, (0, idx))
+            homographies.append(H)
+            # CACHE 3 BOTTLENECK
+            corrs.append(mkpts)
+
+        return homographies, corrs
 
     def register(self, img_paths: np.ndarray):
         """
@@ -92,26 +121,7 @@ class HomogEstimator:
         matches = self.matcher({"image0": feats1, "image1": feats2})
         return matches
 
-    def register_pairs(self):
-        homographies = []
-        corrs = []
-        # Get homography for each pair
-        for idx, pair in enumerate(self.pairs):
-            # TODO FIX
-            fragment_a = self.images[pair[0]]
-            fragment_b = self.images[pair[1]]
-            # Extract features from both images
-            feats_a = self.extractor.extract(fragment_a.to(self.device))
-            feats_b = self.extractor.extract(fragment_b.to(self.device))
-            # Find matches between images
-            matches_a_b = self.matcher({"image0": feats_a, "image1": feats_b})
-            # Ger homography from image b to a
-            H, m, mkpts = self.get_homography(feats_a, feats_b, matches_a_b, (pair[0], pair[1]))
 
-            homographies.append(H)
-            corrs.append(mkpts)
-
-        return homographies, corrs
 
     def get_homography(self, feats1, feats2, matches12, pair):
         # Reshape the input

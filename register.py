@@ -5,6 +5,7 @@ import torch.cuda
 import datetime
 import logging
 import diskcache
+import tqdm
 
 from HomogEst import HomogEstimator
 from Stitcher import Stitcher
@@ -19,11 +20,12 @@ class StitchApp():
         self.config = config
         # Init cache dir
         if self.config.cache.is_on:
-            self.cache = diskcache.Cache(self.config.cache.cache_path)
-            self.cache.max_size = 1024 * 1024 * self.config.cache.max_size
+            self.cache = diskcache.Cache(self.config.cache.path, timeout=60*60)
+            self.cache.max_size = 1024 * 1024 * self.config.cache.size_mb
+        else:
+            self.cache = None
 
         self.pairs = config.data.img_pairs
-
 
         # TODO Change
         # Initialize homography estimator
@@ -38,7 +40,7 @@ class StitchApp():
         self.stitcher = Stitcher(config, debug=True)
 
         # Load images paths
-        self.load_image_paths(True)
+        self.ref_path, self.frag_paths = self.load_image_paths(True)
 
         # debug printouts
         self.debug = self.config.debug
@@ -60,23 +62,22 @@ class StitchApp():
 
         # Apply the homography
         logging.info("Warping images with estimated homography")
-        warped_images = self.stitcher.warp_images(homographies, self.img_paths, self.pairs)
+        warped_images = self.stitcher.warp_images(homographies, self.frag_paths, self.cache)
 
         # Stitch the images for debug output
         if self.debug:
-            stitched = self.stitcher.blend("weighted", args=warped_images)
+            stitched = self.stitcher.blend("weighted", args={"fragments":warped_images, "cache": self.cache})
             cv.imwrite("./plots/homog_stitch.jpg", stitched)
 
         # Warp images with optical flow
         logging.info("Estimating optical flow")
-        ref = warped_images[0]
-        flow_warped_images = self.run_flow(warped_images)
+        flow_warped_images = self.run_flow(self.ref_path, warped_images)
         # Del due to memory consumption
         del warped_images
 
-        # # Stitch the images for debug output
+        # Stitch the images for debug output
         if self.debug:
-            stitched = self.stitcher.blend("weighted", args=flow_warped_images)
+            stitched = self.stitcher.blend("weighted", args={"fragments":flow_warped_images, "cache": self.cache})
             cv.imwrite("./plots/flow_stitch.jpg", stitched)
 
 
@@ -87,7 +88,7 @@ class StitchApp():
 
         logging.info("Stitching actual image")
         # Flow Stitch
-        stitched = self.stitcher.blend(self.config.stitcher.mode, args={"imgs":light_adjusted, "Hs":homographies })
+        stitched = self.stitcher.blend(self.config.stitcher.mode, args={"imgs":light_adjusted, "Hs":homographies, 'cache':self.cache})
         cv.imwrite("./plots/final_flow_stitch.jpg", stitched)
 
     def run_homog(self):
@@ -103,7 +104,7 @@ class StitchApp():
                 homographies = pickle.load(f)
         else:
             # The img paths is sent to load the images in correct format for feature extraction and matching
-            homographies = self.homog_estimator.register(self.img_paths)
+            homographies, _ = self.homog_estimator.new_register(self.ref_path, self.frag_paths)
             if self.config.homog.save:
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 with open(f"opt_hom_{timestamp}.pkl", "wb") as f:
@@ -111,7 +112,7 @@ class StitchApp():
 
         return homographies
 
-    def run_flow(self, warped_images):
+    def run_flow(self, ref_path, warped_fragments):
         """
         Runs the flow estimation
         Args:
@@ -124,12 +125,19 @@ class StitchApp():
             with open(self.config.optical.load, "rb") as f:
                 flow_warped_images = pickle.load(f)
         else:
-            flow_warped_images = self.run_optical_flow(warped_images)
+            ref_img = cv.imread(ref_path)
+            flow_warped_images = self.run_optical_flow(ref_img, warped_fragments)
             # Save flows if needed
             if self.config.homog.save:
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 with open(f"flows_{timestamp}.pkl", "wb") as f:
-                    pickle.dump(flow_warped_images, f)
+                    if self.cache is not None:
+                        collect = {}
+                        for key in flow_warped_images:
+                            collect[key] = self.cache[key]
+                        pickle.dump(collect, f)
+                    else:
+                        pickle.dump(flow_warped_images, f)
 
         return flow_warped_images
 
@@ -155,11 +163,10 @@ class StitchApp():
         Resizes the reference image to final resolution
         Returns:
         """
-        p = os.path.join(str(self.config.data.img_folder), str(self.config.data.img_overview))
-        ref = cv.imread(p)
+        ref = cv.imread(self.ref_path)
         h, w =  self.config.data.final_res
         ref = cv.resize(ref, (w,h), interpolation=cv.INTER_CUBIC)
-        cv.imwrite(p, ref)
+        cv.imwrite(self.ref_path, ref)
 
 
     def load_image_paths(self, sort):
@@ -168,8 +175,7 @@ class StitchApp():
         overview_name = str(self.config.data.img_overview)
         # Get overview image and save it separately for visualization
         if overview_name in img_names:
-            ov_img_p = os.path.join(self.config.data.img_folder, overview_name)
-            self.ov_img_cv = cv.imread(ov_img_p)
+            ref_path = os.path.join(self.config.data.img_folder, overview_name)
         else:
             raise ValueError("Overview image not found")
         if sort:
@@ -177,25 +183,44 @@ class StitchApp():
 
         # Save only the paths as we need to load the images in different formats
         # for visualization and homography
-        self.img_paths = []
+        frag_path = []
         for name in img_names:
-            img_p = os.path.join(self.config.data.img_folder, name)
-            self.img_paths.append(img_p)
+            if name != overview_name:
+                img_p = os.path.join(self.config.data.img_folder, name)
+                frag_path.append(img_p)
+        return ref_path, frag_path
 
-    def run_optical_flow(self, homog_images):
+    def run_optical_flow(self, ref_img, warp_frags):
 
-        img_flows = self.optical.estimate_flows(homog_images)
-        # Apply image flows
-        flow_warped_images = {}
-        for flow, (key, val) in zip(img_flows, homog_images.items()):
+        img_pbar = tqdm.tqdm(total=len(warp_frags), desc='Processing fragments using optical flow',
+                        position=0, leave=False, ncols=100, colour='green')
 
-            warped = self.optical.warp_image(val[0], flow)
-            mask = (warped > 0)
-            cv.imwrite(f"./plots/before_warp_{key}.jpg", val[0])
-            cv.imwrite(f"./plots/warped_flow_{key}.jpg", warped)
-            flow_warped_images[key] = (warped, mask)
+        flow_fragments = []
+        for key, val in enumerate(warp_frags):
+            if self.cache is not None:
+                frag, mask = self.cache.pop(val)
+            else:
+                frag, mask = val
 
-        return flow_warped_images
+            flow = self.optical.estimate_flow(ref_img, frag)
+            # Apply image flows
+            flow_frag = self.optical.warp_image(frag, flow)
+            # Save debug img
+            if self.config.optical.debug:
+                cv.imwrite(f"./plots/before_warp_{key}.jpg", frag)
+                cv.imwrite(f"./plots/warped_flow_{key}.jpg", flow_frag)
+            # Cache 2
+            if self.cache is not None:
+                cache_key = f"flow_frag_{key}"
+                with open("cache/test_pkl.pkl", "wb") as f:
+                    pickle.dump((flow_frag, mask), f)
+                self.cache.add(cache_key, (flow_frag, mask))
+                flow_fragments.append(cache_key)
+            else:
+                flow_fragments.append((flow_frag, mask))
+            img_pbar.update(1)
+
+        return flow_fragments
 
 
     def compose_final_img(self, warped_flows, overview):

@@ -122,7 +122,64 @@ class OpticalFlow:
 
         return flow_patches
 
-    def estimate_flows(self, warped_images):
+    def estimate_flow(self, ref_img, frag_img, debug_idx=0):
+
+        # Get the overlapping region  for optical flow estimation
+        overlap1, overlap2 = self.get_overlap_region(ref_img, frag_img)
+        assert overlap1.shape == overlap2.shape
+
+        _, bin_mask_ov = cv.threshold(cv.cvtColor(overlap1, cv.COLOR_BGR2GRAY), 1, 255, cv.THRESH_BINARY)
+        # _, bin_mask_fr = cv.threshold(cv.cvtColor(overlap2, cv.COLOR_BGR2GRAY), 1, 255, cv.THRESH_BINARY)
+
+        coords_ov = cv.findNonZero(bin_mask_ov)
+        # coords_fr = cv.findNonZero(bin_mask_fr)
+
+        o_x, o_y, o_w, o_h = cv.boundingRect(coords_ov)
+        cropped_ov = overlap1[o_y:o_y + o_h, o_x:o_x + o_w]
+        # f_x, f_y, f_w, f_h = cv.boundingRect(coords_fr)
+        # cropped_fr = overlap2[f_y:f_y + f_h, f_x:f_x + f_w]
+        cropped_fr = overlap2[o_y:o_y + o_h, o_x:o_x + o_w]
+
+        if self.config.optical.debug:
+            cv.imwrite(f"./plots/cropped_ov_{debug_idx}.jpg", cropped_ov)
+            cv.imwrite(f"./plots/cropped_fr_{debug_idx}.jpg", cropped_fr)
+
+        if cropped_fr.shape != cropped_ov.shape:
+            raise ValueError("Images must have the same shape.")
+
+        # Resize the image into computable form for optical flow estimation
+        # useful when subsampling is suitable to predict lower amount of fragment patches
+        if self.config.optical.subsample_factor:
+            h_f, w_f = self.config.optical.subsample_factor
+            h, w = cropped_fr.shape[:2]
+            size = (int(h / h_f), int(w / w_f))
+            resized_imgs = [cv.resize(cropped_ov, size), cv.resize(cropped_fr, size)]
+        else:
+            resized_imgs = [cropped_ov, cropped_fr]
+
+        # Get the size of patch | [height, width]
+        patch_size = self.config.optical.input_size
+        # Returns patches list of tuples [(overview, fragment)] patches and relative position of the patch
+        patches, positions = self.split_image_with_overlap(resized_imgs, patch_size,
+                                                           self.config.optical.patch_overlap)
+        # Estimate the flow on patches
+        flow_patches = self.estimate_patches(patches)
+
+        stitched_flow = self.merge_flows(flow_patches, positions, resized_imgs[0].shape,
+                                         self.config.optical.patch_overlap)
+        flow_in_ov = np.zeros((ref_img.shape[0], ref_img.shape[1], 2))
+        # Get the flow into dimension and position of overlap image
+        flow_in_ov[o_y:o_y + o_h, o_x:o_x + o_w] = stitched_flow
+
+        if self.config.debug:
+            stitched_flow_img = self.np_flow_to_img(stitched_flow)
+            cv.imwrite(f"./plots/stitched_flow_{debug_idx}.jpg", stitched_flow_img)
+            flow_in_ov_img = self.np_flow_to_img(flow_in_ov)
+            cv.imwrite(f"./plots/flow_in_ov_img_{debug_idx}.jpg", flow_in_ov_img)
+
+        return flow_in_ov
+
+    def estimate_flows(self, ref_img, warped_frag, cahce):
         """
         Estimates the flow on all images in the given dictionary.
         Args:
@@ -133,20 +190,20 @@ class OpticalFlow:
         """
 
         # Holders for overlap image, to which every single one is aligned
-        # TODO Redo to look nicer
-        ov = warped_images.pop(0)
-        ov_img = ov[0]
         fragment_flows = []
 
-        img_pbar = tqdm(total=len(warped_images), desc='Processing fragments using optical flow',
+        img_pbar = tqdm(total=len(warped_frag), desc='Processing fragments using optical flow',
                         position=0, leave=False, ncols=100, colour='green')
         # Iterate over fragments to compute optical flow in regard to the overlay
-        for key, val in warped_images.items():
+        for key, val in enumerate(warped_frag):
 
-            frag = val[0]
+            if cahce is not None:
+                frag = cahce[val]
+            else:
+                frag = val
 
             # Get the overlapping region  for optical flow estimation
-            overlap1, overlap2 = self.get_overlap_region(ov_img, frag)
+            overlap1, overlap2 = self.get_overlap_region(ref_img, frag)
             assert overlap1.shape == overlap2.shape
 
             _, bin_mask_ov = cv.threshold(cv.cvtColor(overlap1, cv.COLOR_BGR2GRAY), 1, 255, cv.THRESH_BINARY)
@@ -188,7 +245,7 @@ class OpticalFlow:
 
             stitched_flow = self.merge_flows(flow_patches, positions, resized_imgs[0].shape,
                                              self.config.optical.patch_overlap)
-            flow_in_ov = np.zeros((ov_img.shape[0], ov_img.shape[1], 2))
+            flow_in_ov = np.zeros((ref_img.shape[0], ref_img.shape[1], 2))
             # Get the flow into dimension and position of overlap image
             flow_in_ov[o_y:o_y + o_h, o_x:o_x + o_w] = stitched_flow
 
