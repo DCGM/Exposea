@@ -20,7 +20,8 @@ class StitchApp():
         self.config = config
         # Init cache dir
         if self.config.cache.is_on:
-            self.cache = diskcache.Cache(self.config.cache.path, timeout=60*60)
+            self.cache = diskcache.Cache(self.config.cache.path, timeout=60*60, cull_limit=0, eviction_policy="none")
+            self.cache.clear()
             self.cache.max_size = 1024 * 1024 * self.config.cache.size_mb
         else:
             self.cache = None
@@ -45,6 +46,9 @@ class StitchApp():
         # debug printouts
         self.debug = self.config.debug
 
+    def __del__(self):
+        self.cache.clear()
+
     def run(self):
         """
         Runs the main stitch app.
@@ -55,7 +59,8 @@ class StitchApp():
         # Make sure that the overview image is in final resolution
         # TODO Change this
         self.resize_reference()
-
+        # TODO CHECK IMG TYPES ALLWAYS FLOATS
+        # TODO GLIMUR
         # Estimate homographies
         logging.info("Estimating homographies")
         homographies = self.run_homog()
@@ -82,7 +87,7 @@ class StitchApp():
 
 
         logging.info("Adjusting light")
-        light_adjusted = flow_warped_images #self.run_light_equal(ref, flow_warped_images)
+        light_adjusted = self.run_light_equal(self.ref_path, flow_warped_images)
         # Del due to memory consumption
         del flow_warped_images
 
@@ -90,6 +95,7 @@ class StitchApp():
         # Flow Stitch
         stitched = self.stitcher.blend(self.config.stitcher.mode, args={"imgs":light_adjusted, "Hs":homographies, 'cache':self.cache})
         cv.imwrite("./plots/final_flow_stitch.jpg", stitched)
+
 
     def run_homog(self):
         """
@@ -107,7 +113,7 @@ class StitchApp():
             homographies, _ = self.homog_estimator.new_register(self.ref_path, self.frag_paths)
             if self.config.homog.save:
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                with open(f"opt_hom_{timestamp}.pkl", "wb") as f:
+                with open(f"cache/homogs/opt_hom_{timestamp}.pkl", "wb") as f:
                     pickle.dump(homographies, f)
 
         return homographies
@@ -123,14 +129,22 @@ class StitchApp():
         # Store or load flows
         if self.config.optical.load:
             with open(self.config.optical.load, "rb") as f:
-                flow_warped_images = pickle.load(f)
+                saved_flows = pickle.load(f)
+                flow_warped_images = []
+                if self.config.cache.is_on:
+                    for key, val in enumerate(saved_flows):
+                        self.cache[key] = val
+                        flow_warped_images.append(key)
+                else:
+                    flow_warped_images = saved_flows
+
         else:
             ref_img = cv.imread(ref_path)
             flow_warped_images = self.run_optical_flow(ref_img, warped_fragments)
             # Save flows if needed
             if self.config.homog.save:
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                with open(f"flows_{timestamp}.pkl", "wb") as f:
+                with open(f"cache/flows/flows_{timestamp}.pkl", "wb") as f:
                     if self.cache is not None:
                         collect = {}
                         for key in flow_warped_images:
@@ -151,9 +165,8 @@ class StitchApp():
         Returns:
         """
         # Equalize light
-        flow_warped_images[0] = ref
-        light_adjusted = equalize(flow_warped_images, config=self.config)
-        light_adjusted[0] = ref
+        ref_img = cv.imread(ref)
+        light_adjusted = equalize(flow_warped_images, self.cache, ref_img, config=self.config)
 
         return light_adjusted
 
@@ -228,7 +241,7 @@ class StitchApp():
 
 
 # Launch the application for stitching the image
-@hydra.main(version_base=None, config_path="configs", config_name="debug")
+@hydra.main(version_base=None, config_path="configs", config_name="david")
 def main(config):
     app = StitchApp(config)
     app.run()

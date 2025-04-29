@@ -8,7 +8,9 @@ Author: Ing. David Pukanec
 """
 
 import cv2 as cv
+import diskcache
 import numpy as np
+from markdown_it.rules_inline import fragments_join
 from memory_profiler import profile
 
 class Stitcher():
@@ -59,7 +61,7 @@ class Stitcher():
             mask = (mask > 0)
 
             if cache is not None:
-                # Cache 2 for memory consumption
+                # CACHE 2 for memory consumption
                 cache_key = f'warped_{i}'
                 cache[cache_key] = [warped, mask]
                 ck_warped.append(cache_key)
@@ -154,8 +156,9 @@ class Stitcher():
     def blend_actual(self, args):
 
         Hs = args['Hs']
-        img_keys = args['imgs']
+        fragments = args['imgs']
         cache = args['cache']
+
         # The output resolution
         res = (int(self.config.data.final_res[0]), int(self.config.data.final_res[1]))
 
@@ -164,13 +167,12 @@ class Stitcher():
         # Accumulator for closest value to 1
         val_accum = np.ones(res) * 99999
 
-        for key in img_keys:
+        for idx, key in enumerate(fragments):
             # Ignore reference
-            if key == 0:
-                continue
-            img, mask = cache[key]
-            # img = val[0]
-            # mask = val[1]
+            if cache is not None:
+                img, mask = cache[key]
+            else:
+                img, mask = key
 
             shrunk_mask = self.erode_mask(mask)
 
@@ -178,7 +180,7 @@ class Stitcher():
             y_max, x_max = np.argwhere(shrunk_mask[:,:,0]).max(axis=0)  # Get max row and column
 
             # Compute dense jacobian denterminants
-            det = self.compute_jacobian_determinant(Hs[key], img[y_min:y_max, x_min:x_max].shape[:2])
+            det = self.compute_jacobian_determinant(Hs[idx], img[y_min:y_max, x_min:x_max].shape[:2])
 
             # Get the determinant inside the image
             res_array = np.zeros(img.shape[:2])
@@ -189,28 +191,35 @@ class Stitcher():
             stacked_val = np.stack([res_array, val_accum], axis=0)
 
             # Compare current 0 idx, and previus best 1 idx
-            compare_idxs = np.abs(np.log(stacked_val) - 1).argmin(axis=0)
+            compare_idxs = np.abs(np.log(np.maximum(np.abs(stacked_val), 1e-8)) - 1).argmin(axis=0)
 
             # Select where the current was better
             accum_mask = compare_idxs == 0
 
             # Update accumulators
-            idx_accum[accum_mask & shrunk_mask[:,:,0]] = int(key)
+            idx_accum[accum_mask & shrunk_mask[:,:,0]] = int(idx)
             val_accum[accum_mask] = res_array[accum_mask]
 
-
         best_image_index = idx_accum
-        weights = []
-        for key, val in img_keys:
-            if key == 0:
-                continue
-            best_image_mask = best_image_index == int(key)
+        # TODO FIX
+        # Create CACHE 1 for weights as this is bottleneck
+        if self.config.cache.is_on:
+            weights = diskcache.Cache(self.config.cache.path, timeout=60*60, cull_limit=0, eviction_policy="none")
+        else:
+            weights = {}
+
+        for idx, _ in enumerate(fragments):
+            # Find where image will be written
+            best_image_mask = best_image_index == int(idx)
 
             weight = 1 - self.calc_border_dist(best_image_mask, k=50)[:, :, 0]
-            weights.append(weight.astype(np.float16))
+            # CACHE 1
+            key = f'weights_{idx}'
+            weights[key] = weight.astype(np.float16)
 
-        list_images = [cache[key][0] for key, value in img_keys.items() if key not in [0]]
-        final_image = self.blend_weighted_images(list_images, weights)
+        #list_images = [cache[key][0] for key, value in fragments.items() if key not in [0]]
+        final_image = self.blend_weighted_images(fragments, cache, weights)
+
         return final_image
 
     def old_blend_actual(self, args):
@@ -278,40 +287,57 @@ class Stitcher():
         final_image = self.blend_weighted_images(list_images, weights)
         return final_image
 
-    def blend_weighted_images(self, images, weights):
+    @profile
+    def blend_weighted_images(self, fragments, frag_cache, weights):
         """
         Blends multiple images using per-pixel weights
         Args:
             images (list[np.ndarray]): List of images (H x W x C) to blend.
-            weights (list[np.ndarray]): List of weights (H x W) to blend.
+            weights : List of weights (H x W) to blend.
 
         Returns:
              np.ndarray: The final blended image (H x W x C) in uint8 format.
         """
+        total_weight = 0
+        final_img = np.zeros((self.config.data.final_res[0],self.config.data.final_res[1], 3), dtype=np.float32)
 
-        # Convert images to float16 for blending
-        images = [img.astype(np.float32) for img in images]
-        weights = [w.astype(np.float32) for w in weights]
+        for idx, frag in enumerate(fragments):
+            if self.config.cache.is_on:
+                frag = frag_cache[frag][0]
+            # Expand weight maps to match image channels (if grayscale)
+            if frag.ndim == 2:
+                frag = frag[..., np.newaxis]
+            frag = frag.astype(np.float32)
+            # Sum total weights
+            weight_key = f'weights_{idx}'
+            weight = weights[weight_key][:, :, np.newaxis]
+            total_weight += weight
+            # Apply weight  to the image
+            frag *= weight
+            final_img += frag
+        final_img /= total_weight
+        # TODO PRECISION
+        final_img = np.clip(final_img, 0, 255).astype(np.uint8)
 
-        # Expand weight maps to match image channels (if grayscale)
-        weights = [w[..., np.newaxis] if w.ndim == 2 else w for w in weights]
+        # # Expand weight maps to match image channels (if grayscale)
+        # weights = [w[..., np.newaxis] if w.ndim == 2 else w for w in weights]
+        #
+        # # Compute the total weight per pixel (sum of all weights)
+        # total_weight = sum(weights)
 
-        # Compute the total weight per pixel (sum of all weights)
-        total_weight = sum(weights)
+        # # Avoid division by zero (set total_weight to 1 where it's 0)
+        # total_weight = np.clip(total_weight, 1e-8, None)
+        #
+        # # Compute the final weighted sum
+        # weighted_sum = sum(img * w for img, w in zip(images, weights))
+        #
+        # # Normalize the final image
+        # final_image = weighted_sum / total_weight
+        #
+        # # Convert back to uint8
+        # final_image = np.clip(final_image, 0, 255).astype(np.uint8)
 
-        # Avoid division by zero (set total_weight to 1 where it's 0)
-        total_weight = np.clip(total_weight, 1e-8, None)
-
-        # Compute the final weighted sum
-        weighted_sum = sum(img * w for img, w in zip(images, weights))
-
-        # Normalize the final image
-        final_image = weighted_sum / total_weight
-
-        # Convert back to uint8
-        final_image = np.clip(final_image, 0, 255).astype(np.uint8)
-
-        return final_image
+        return final_img
 
     def calc_border_dist(self, seam, k = 100, type=cv.THRESH_BINARY_INV):
         """

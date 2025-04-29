@@ -5,8 +5,7 @@ from lightglue import viz2d
 from marek.homography_optimalizer import *
 from lightglue import LightGlue, SuperPoint
 import torch
-from omegaconf import OmegaConf
-
+from memory_profiler import profile
 
 def load_imgs(img_paths):
     # Load images in super point and light glue format
@@ -59,8 +58,8 @@ class HomogEstimator:
 
         self.debug = config.homog.debug
         # self.pairs = OmegaConf.to_container(config.data.img_pairs)
-        self.images = None
 
+    @profile
     def new_register(self, ref_path: str, frag_paths: list[str]):
         # TODO Switch to this
         # Get ref img
@@ -74,6 +73,10 @@ class HomogEstimator:
         for idx, frag_path in enumerate(frag_paths):
             # Extract frag features
             frag_img = load_image(frag_path)
+            # For debug output
+            if self.config.homog.debug:
+                self.images = (ref_img, frag_img)
+
             feats_frag = self.extractor.extract(frag_img.to(self.device))
             # Find matches between images
             matches_a_b = self.matcher({"image0": feats_ref, "image1": feats_frag})
@@ -85,41 +88,41 @@ class HomogEstimator:
 
         return homographies, corrs
 
-    def register(self, img_paths: np.ndarray):
-        """
-        Main function that handles registration
-        Args:
-            img_paths:
-        Returns:
+    # def register(self, img_paths: np.ndarray):
+    #     """
+    #     Main function that handles registration
+    #     Args:
+    #         img_paths:
+    #     Returns:
+    #
+    #     """
+    #     # Load images
+    #     self.images = load_imgs(img_paths)
+    #     # Register images by pair returns homography and corresponding points for each pair
+    #     homographies, corrs = self.register_pairs()
+    #     # Normalize homographies into common coordinate frame
+    #     homographies = self.normalize_homographies(homographies)
+    #
+    #     # Global optimization
+    #     if self.config.homog.do_optimization:
+    #         # Prepare input for optimizer
+    #         correspondences = []
+    #         for idx, pair in enumerate(self.pairs):
+    #             correspondences.append({"pair": pair, "points": corrs[idx]})
+    #         hom_list = []
+    #         # Remove identity homography from list
+    #         for key, value in homographies.items():
+    #             if key == 0:
+    #                 continue
+    #             hom_list.append(value)
+    #         # Run optimization
+    #         homographies = self.homog_opt.optimize(self.pairs, hom_list, correspondences)
+    #         # Save optimized homographies
+    #     return homographies
 
-        """
-        # Load images
-        self.images = load_imgs(img_paths)
-        # Register images by pair returns homography and corresponding points for each pair
-        homographies, corrs = self.register_pairs()
-        # Normalize homographies into common coordinate frame
-        homographies = self.normalize_homographies(homographies)
-
-        # Global optimization
-        if self.config.homog.do_optimization:
-            # Prepare input for optimizer
-            correspondences = []
-            for idx, pair in enumerate(self.pairs):
-                correspondences.append({"pair": pair, "points": corrs[idx]})
-            hom_list = []
-            # Remove identity homography from list
-            for key, value in homographies.items():
-                if key == 0:
-                    continue
-                hom_list.append(value)
-            # Run optimization
-            homographies = self.homog_opt.optimize(self.pairs, hom_list, correspondences)
-            # Save optimized homographies
-        return homographies
-
-    def match_feat_pairs(self, feats1, feats2):
-        matches = self.matcher({"image0": feats1, "image1": feats2})
-        return matches
+    # def match_feat_pairs(self, feats1, feats2):
+    #     matches = self.matcher({"image0": feats1, "image1": feats2})
+    #     return matches
 
 
 
@@ -134,12 +137,12 @@ class HomogEstimator:
 
         # Save image with matched features
         if self.config.homog.debug:
-            _save_debug_imgs([self.images[pair[0]], m_kpts1, kpts1],
-                             [self.images[pair[1]], m_kpts2, kpts2],
+            _save_debug_imgs([self.images[0], m_kpts1, kpts1],
+                             [self.images[1], m_kpts2, kpts2],
                              matches12,
                              path=f"./plots/matches_{pair[0]}_{pair[1]}.jpeg")
-            _save_key_imgs([self.images[pair[0]], m_kpts1, kpts1],
-                            [self.images[pair[1]], m_kpts2, kpts2],
+            _save_key_imgs([self.images[0], m_kpts1, kpts1],
+                            [self.images[1], m_kpts2, kpts2],
                             path=f"./plots/kpts_{pair[0]}_{pair[1]}.jpeg")
 
 

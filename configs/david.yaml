@@ -1,5 +1,10 @@
 debug: True # To output global debug values
 
+cache:
+  is_on: True
+  path: cache/diskcache/
+  size_mb: 10000
+
 # Parameters regarding homography estimation
 homog:
   type: default
@@ -11,7 +16,7 @@ homog:
   optimizer: marek # Type of optimization
 
   # Preload saved homographies
-  load: #opt_hom_20250416_150301.pkl
+  load: #cache/homogs/opt_hom_20250423_145103.pkl
   save: True
   debug: True
 
@@ -24,7 +29,7 @@ optical:
   subsample_factor: # [1,1] TODO Not working
 
   # Load saved flows
-  load: #flows_20250422_105423.pkl
+  load: #cache/flows/flows_20250423_153203.pkl
   save: False
   debug: True
 
@@ -46,4 +51,4 @@ data:
   img_pairs: [[0,1],[0,2],[0,3],[0,4],[0,5],[0,6],[0,7],[0,8],[0,9],
               [0,10], [0,11], [0,12], [0,13],[0,14], [0,15], [0,16],
               [0,17], [0,18], [0,19], [0,20],[0,21],[0,22],[0,23],[0,24],[0,25],[0,26],[0,27],[0,28],[0,29]]
-  final_res: [6000, 7600] #[5956, 7535]
+  final_res: [5956, 7535]
