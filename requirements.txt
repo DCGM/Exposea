@@ -4,3 +4,4 @@ tqdm
 hydra-core
 memory-profiler
 diskcache
+numpy<2

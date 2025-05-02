@@ -6,6 +6,7 @@ import datetime
 import logging
 import diskcache
 import tqdm
+from tensorboard.compat.tensorflow_stub.io.gfile import exists
 
 from HomogEst import HomogEstimator
 from Stitcher import Stitcher
@@ -60,9 +61,14 @@ class StitchApp():
         # Estimate homographies
         logging.info("Estimating homographies")
         homographies = self.run_homog()
-
-        # for img_p in self.frag_paths:
-        #     warp_fragment =
+        #
+        for idx, img_p in enumerate(self.frag_paths):
+            # Warp image with estimated homography
+            warp_fragment = self.stitcher.warp_fragment(homographies[idx], img_p)
+            # Run optical flow
+            flow_fragment = self.run_flow(self.ref_path, warp_fragment)
+            # Run light optimization
+            light_fragment = self.run_light_equal(self.ref_path, flow_fragment)
 
     def run(self):
         """
@@ -255,6 +261,11 @@ class StitchApp():
         pass
 
 
+def create_dirs():
+    os.makedirs("plots", exist_ok=True)
+    os.makedirs("cache", exist_ok=True)
+    os.makedirs("cache/homogs", exist_ok=True)
+    os.makedirs("cache/flows", exist_ok=True)
 # Launch the application for stitching the image
 @hydra.main(version_base=None, config_path="configs", config_name="david")
 def main(config):
