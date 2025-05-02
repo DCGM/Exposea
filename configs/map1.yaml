@@ -44,7 +44,7 @@ data:
   img_overview: 0.JPG
   img_folder: "imgs/example1"
   img_pairs: [[0,1],[0,2],[0,3],[0,4],[0,5],[0,6],[0,7]]
-  final_res: [6400, 8400]
+  final_res: [6400, 8400] # Final resolution of output
 
 # Hydra exec dir to project dir
 hydra:
