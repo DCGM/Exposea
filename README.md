@@ -9,20 +9,21 @@ Clone the repository
    git clone git@github.com:ikarus1211/StitcherA.git
    cd StitcherA
  ```  
-#### For Pip 
+Select one option to install environment
+#### For Pip (Option 1)
 Install a suitable version of PyTorch >= 2.3 and <= 2.6.0 
-    ```bash
+    ```
     pip install torch==2.3.0 torchvision==0.18.0 torchaudio==2.3.0 --index-url https://download.pytorch.org/whl/cu121
     ```
 Install requirements
     ```bash 
    pip install -r requirements.txt
     ```
-#### For Conda
-Install the environment ```bash conda env create -f environment.yaml```
+#### For Conda (Option 2)
+Install the environment ``` conda env create -f environment.yaml```
 
 #### Light Glue
-Clone and install LightGlue repository, don't forget to have the env activated
+After you installed the environment using pip or conda, clone and install LightGlue repository. Don't forget to have the env activated
 ```bash
 git clone https://github.com/cvg/LightGlue.git && cd LightGlue
 python -m pip install -e .
