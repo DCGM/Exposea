@@ -48,6 +48,21 @@ class StitchApp():
 
     def __del__(self):
         self.cache.clear()
+    # TODO Rename after refactor
+
+    def run_single(self):
+
+        if self.debug:
+            print("Torch cuda", torch.cuda.is_available())
+
+        # Make sure that the overview image is in final resolution
+        self.resize_reference()
+        # Estimate homographies
+        logging.info("Estimating homographies")
+        homographies = self.run_homog()
+
+        # for img_p in self.frag_paths:
+        #     warp_fragment =
 
     def run(self):
         """

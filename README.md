@@ -29,6 +29,10 @@ git clone https://github.com/cvg/LightGlue.git && cd LightGlue
 python -m pip install -e .
 ```
 
+***Download the image data from:***
+
+https://nextcloud.fit.vutbr.cz/s/wPxFXjBEbSFioQ6
+
 ### Run
 
 To run simple example navigate to root folder and run:
