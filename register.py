@@ -66,6 +66,10 @@ class StitchApp():
         logging.info("Estimating homographies")
         homographies = self.run_homog()
 
+        for img_path in self.frag_paths:
+            # Apply homography
+            homog_fragment = self.run_homog()
+
         # Apply the homography
         logging.info("Warping images with estimated homography")
         warped_images = self.stitcher.warp_images(homographies, self.frag_paths, self.cache)

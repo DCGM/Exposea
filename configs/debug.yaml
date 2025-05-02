@@ -1,4 +1,5 @@
 debug: True # To output global debug values
+expe_name: debug
 
 cache:
   is_on: True
