@@ -10,7 +10,6 @@ Author: Ing. David Pukanec
 import cv2 as cv
 import diskcache
 import numpy as np
-from markdown_it.rules_inline import fragments_join
 from memory_profiler import profile
 
 class Stitcher():
