@@ -61,6 +61,7 @@ class StitchApp():
         self.resize_reference()
         # TODO CHECK IMG TYPES ALLWAYS FLOATS
         # TODO GLIMUR
+        # Memory rewrite
         # Estimate homographies
         logging.info("Estimating homographies")
         homographies = self.run_homog()
