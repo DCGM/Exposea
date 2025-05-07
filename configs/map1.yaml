@@ -1,4 +1,10 @@
 debug: True # To output global debug values
+exp_name: map1 # Used for saving partial output
+
+cache:
+  is_on: True
+  path: cache/diskcache/
+  size_mb: 20000
 
 # Parameters regarding homography estimation
 homog:
@@ -12,7 +18,7 @@ homog:
 
   # Preload saved homographies
   load:
-  save: True
+  save:
   debug: False
 
 # Parameters regarding optical flow estimation
@@ -25,7 +31,7 @@ optical:
 
   # Load saved flows
   load: # Path to flow
-  save: False
+  save:
   debug: False
 
 # Parameters regarding stitching

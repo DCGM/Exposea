@@ -1,6 +1,7 @@
 debug: True # To output global debug values
-expe_name: debug
+exp_name: debug # Used for saving partial outputs
 
+# TOOD REMOVE
 cache:
   is_on: True
   path: cache/diskcache/
@@ -16,8 +17,8 @@ homog:
   optimizer: marek # Type of optimization
 
   # Preload saved homographies
-  load: #homog_debug.pkl
-  save: True
+  load: cache/homogs/opt_hom_20250507_190004.pkl #cache/homogs/ # Path to saved homographies pkl
+  save: #cache/homogs/ # True
   debug: False
 
 # Parameters regarding optical flow estimation
@@ -29,8 +30,8 @@ optical:
   subsample_factor: # [1,1] TODO Not working
 
   # Load saved flows
-  load: #flows_debug.pkl
-  save: True
+  load: cache/flows/debug/ # Path to FOLDER with saved flows
+  save: cache/flows/debug/ # Path to FOLDER where save homogs if empty no save
   debug: False
 
 # Parameters regarding stitching
