@@ -484,7 +484,8 @@ class ActualBlender:
         res_array[~shrunk_mask[:, :, 0]] = 99999
         stacked_val = np.stack([res_array, self.progressive_val_accum], axis=0)
         # TODO Error accumulation
-        compare_idxs = np.abs(stacked_val - 1).argmin(axis=0)
+        compare_idxs = np.abs(np.log(np.abs(stacked_val) + 1e-8)).argmin(axis=0)
+        # compare_idxs = np.abs(stacked_val - 1).argmin(axis=0)
         # Select where the current was better
         # frag_best_pixels_mask = (compare_idxs == 0) & shrunk_mask[:, :, 0]
         self.best_idx_acum[(compare_idxs == 0) & shrunk_mask[:, :, 0]] = key
