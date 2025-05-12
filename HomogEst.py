@@ -57,10 +57,10 @@ class HomogEstimator:
                 raise NotImplementedError
 
         self.debug = config.homog.debug
-        # self.pairs = OmegaConf.to_container(config.data.img_pairs)
+
 
     @profile
-    def new_register(self, ref_path: str, frag_paths: list[str]):
+    def register(self, ref_path: str, frag_paths: list[str]):
         # TODO Switch to this
         # Get ref img
         ref_img = load_image(ref_path)
@@ -83,47 +83,10 @@ class HomogEstimator:
             # Ger homography from image b to a
             H, m, mkpts = self.get_homography(feats_ref, feats_frag, matches_a_b, (0, idx))
             homographies.append(H)
-            # CACHE 3 BOTTLENECK
+
             corrs.append(mkpts)
 
         return homographies, corrs
-
-    # def register(self, img_paths: np.ndarray):
-    #     """
-    #     Main function that handles registration
-    #     Args:
-    #         img_paths:
-    #     Returns:
-    #
-    #     """
-    #     # Load images
-    #     self.images = load_imgs(img_paths)
-    #     # Register images by pair returns homography and corresponding points for each pair
-    #     homographies, corrs = self.register_pairs()
-    #     # Normalize homographies into common coordinate frame
-    #     homographies = self.normalize_homographies(homographies)
-    #
-    #     # Global optimization
-    #     if self.config.homog.do_optimization:
-    #         # Prepare input for optimizer
-    #         correspondences = []
-    #         for idx, pair in enumerate(self.pairs):
-    #             correspondences.append({"pair": pair, "points": corrs[idx]})
-    #         hom_list = []
-    #         # Remove identity homography from list
-    #         for key, value in homographies.items():
-    #             if key == 0:
-    #                 continue
-    #             hom_list.append(value)
-    #         # Run optimization
-    #         homographies = self.homog_opt.optimize(self.pairs, hom_list, correspondences)
-    #         # Save optimized homographies
-    #     return homographies
-
-    # def match_feat_pairs(self, feats1, feats2):
-    #     matches = self.matcher({"image0": feats1, "image1": feats2})
-    #     return matches
-
 
 
     def get_homography(self, feats1, feats2, matches12, pair):
@@ -152,27 +115,3 @@ class HomogEstimator:
 
         H, mask = cv.findHomography(np.asarray(m_kpts2.cpu()), np.asarray(m_kpts1.cpu()), cv.RANSAC, 5.0)
         return H, mask, (np.asarray(m_kpts2.cpu()), np.asarray(m_kpts1.cpu()))
-
-
-    def normalize_homographies(self, homographies, ref_idx=0):
-
-        global_homographies = {ref_idx: np.eye(3)}
-
-        for idx, (dst, src) in enumerate(self.pairs):
-            if dst == ref_idx:
-                global_homographies[idx + 1] = homographies[idx]
-                continue
-            if src == ref_idx:
-                global_homographies[idx + 1] = np.linalg.inv(homographies[idx])
-                continue
-
-        for idx, (dst, src) in enumerate(self.pairs):
-            if dst == ref_idx or src == ref_idx:
-                continue
-
-            if dst in global_homographies.keys():
-                global_homographies[idx + 1] = global_homographies[dst] @ homographies[idx]
-
-            elif src in global_homographies.keys():
-                global_homographies[idx + 1] = global_homographies[src] @ np.linalg.inv(homographies[idx])
-        return global_homographies

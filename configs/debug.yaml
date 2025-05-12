@@ -1,24 +1,20 @@
 debug: True # To output global debug values
 exp_name: debug # Used for saving partial outputs
 
-# TOOD REMOVE
-cache:
-  is_on: True
-  path: cache/diskcache/
-  size_mb: 20000
+
 # Parameters regarding homography estimation
 homog:
   type: default
-  feature_extractor: SuperPoint
-  max_feat_points: 4096
-  feature_matcher: LightGlue
-  do_optimization: False
+  feature_extractor: SuperPoint # Method to extract features
+  max_feat_points: 4096 # Maximum feature points to find
+  feature_matcher: LightGlue # Method to match features
+  do_optimization: False # Turn optimization on
   max_matches: 200 # Max points to match
   optimizer: marek # Type of optimization
 
   # Preload saved homographies
-  load: cache/homogs/opt_hom_20250507_190004.pkl #cache/homogs/ # Path to saved homographies pkl
-  save: #cache/homogs/ # True
+  load: #cache/homogs/opt_hom_20250512_092605.pkl
+  save: #cache/homogs
   debug: False
 
 # Parameters regarding optical flow estimation
@@ -27,7 +23,7 @@ optical:
   checkpoint: sintel
   input_size: [540, 960] # Size of input patches for model
   patch_overlap: [40,40] # Overlap of input patches
-  subsample_factor: # [1,1] TODO Not working
+  subsample_factor: # [1,1]
 
   # Load saved flows
   load: cache/flows/debug/ # Path to FOLDER with saved flows
@@ -45,14 +41,11 @@ stitcher:
   optim_steps: 50
   blend_width: 100
 
-  cache: False
-
 # Parameters regarding stitching
 data:
-  img_overview: 0.JPG
-  img_folder: "imgs/debug_example"
-  img_pairs: [[0,1], [0,2], [0,3]]
-  final_res: [6400, 8400]
+  img_folder: "imgs/debug_example" # Path to the images
+  img_overview: 0.JPG # Name of overview image contained in img folder
+  final_res: [6400, 8400] # Final resolution of image
 
 # Hydra exec dir to project dir
 hydra:

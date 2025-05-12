@@ -5,7 +5,6 @@ import pickle
 import torch.cuda
 import datetime
 import logging
-import diskcache
 import tqdm
 
 from HomogEst import HomogEstimator
@@ -20,12 +19,6 @@ class StitchApp():
         # Config file
         self.config = config
         # Init cache dir
-        if self.config.cache.is_on:
-            self.cache = diskcache.Cache(self.config.cache.path, timeout=60*60, cull_limit=0, eviction_policy="none")
-            self.cache.clear()
-            self.cache.max_size = 1024 * 1024 * self.config.cache.size_mb
-        else:
-            self.cache = None
 
         self.pairs = config.data.img_pairs
 
@@ -46,9 +39,6 @@ class StitchApp():
 
         # debug printouts
         self.debug = self.config.debug
-
-    def __del__(self):
-        self.cache.clear()
 
     def run(self):
         """
@@ -111,7 +101,7 @@ class StitchApp():
                 homographies = pickle.load(f)
         else:
             # The img paths is sent to load the images in correct format for feature extraction and matching
-            homographies, _ = self.homog_estimator.new_register(self.ref_path, self.frag_paths)
+            homographies, _ = self.homog_estimator.register(self.ref_path, self.frag_paths)
             if self.config.homog.save:
                 os.makedirs(self.config.homog.save, exist_ok=True)
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -207,13 +197,8 @@ class StitchApp():
         return ref_path, frag_path
 
 
-
-    def compose_final_img(self, warped_flows, overview):
-        pass
-
-
 # Launch the application for stitching the image
-@hydra.main(version_base=None, config_path="configs", config_name="map1")
+@hydra.main(version_base=None, config_path="configs", config_name="debug")
 def main(config):
     app = StitchApp(config)
     app.run()
