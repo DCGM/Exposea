@@ -57,58 +57,6 @@ class Stitcher():
         return warped, mask
 
 
-    def compute_jacobian_determinant(self, H, shape):
-        """
-        Computes the Jacobian determinant for each pixel after applying homography H.
-        Args:
-            H (np.ndarray): 3x3 homography matrix.
-            shape (tuple[int, int]): Shape (height, width) of the image.
-        Return:
-            np.ndarray: A 2D array (H x W) representing the Jacobian determinant at each pixel.
-        """
-        h, w = shape[:2]
-
-        # Generate a grid of pixel coordinates
-        x, y = np.meshgrid(np.arange(w), np.arange(h))
-        ones = np.ones_like(x)
-
-        # Convert to homogeneous coordinates
-        coords = np.stack([x, y, ones], axis=-1).reshape(-1, 3).T  # Shape: (3, N)
-
-        # Apply homography to get transformed coordinates
-        transformed_coords = H @ coords
-        transformed_coords /= transformed_coords[2]  # Normalize homogeneous coordinates
-
-        x_prime = transformed_coords[0].reshape(h, w)
-        y_prime = transformed_coords[1].reshape(h, w)
-
-        # Compute partial derivatives to get the Jacobian matrix
-        dx_dx, dx_dy = np.gradient(x_prime, axis=(0, 1))  # Partial derivatives of x'
-        dy_dx, dy_dy = np.gradient(y_prime, axis=(0, 1))  # Partial derivatives of y'
-
-        # Compute determinant of the Jacobian matrix at each pixel
-        J_det = dx_dx * dy_dy - dx_dy * dy_dx  # det(J)
-        return J_det
-
-    def save_idx_acum(self, idx_accum):
-        max_idx = int(np.max(idx_accum))
-        idx_accum[idx_accum == -1] = 0
-        idx_accum = idx_accum.astype(np.uint8)
-        idx_accum = idx_accum * np.uint8(254 / max_idx)
-        for i in range(0, max_idx):
-            idx_accum[i * 50: i * 50 + 50, 0: 50] = i * np.uint8(254 / max_idx)
-
-        font = cv.FONT_HERSHEY_SIMPLEX
-        font_scale = 2
-        color = (0, 0, 0)  # Black color in BGR
-        thickness = 3
-        for y_res in range(0 ,200, idx_accum.shape[0]):
-            for x_res in range(0 ,200, idx_accum.shape[1]):
-                cv.putText(idx_accum, str(idx_accum[y_res,x_res]), (y_res, x_res), font, font_scale, color, thickness, cv.LINE_AA)
-
-        cv.imwrite("./plots/idx_accum.jpg", idx_accum)
-
-
     def blend_weighted(self, args):
 
         if args['cache'] is not None:

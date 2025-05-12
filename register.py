@@ -4,8 +4,6 @@ import hydra
 import pickle
 import torch.cuda
 import datetime
-import logging
-import tqdm
 
 from HomogEst import HomogEstimator
 from Stitcher import Stitcher, ActualBlender
@@ -19,8 +17,6 @@ class StitchApp():
         # Config file
         self.config = config
         # Init cache dir
-
-        self.pairs = config.data.img_pairs
 
         # TODO Change
         # Initialize homography estimator
