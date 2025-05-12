@@ -59,6 +59,17 @@ class SpatialLightParams(nn.Module):
         return adjusted_fragment
 
 
+def equalize_frag(flow_fragment, mask, ref_img, config):
+    # Get reference image and normalize it
+    ref_norm = ref_img.astype(np.float32) / 255.0
+    # Normalize fragment
+    norm_frag = flow_fragment.astype(np.float32) / 255.0
+    # Light optimization
+    frag_adj = spatial_light_adjustment(norm_frag, ref_norm, mask, config)
+    # Rescale it back to 255
+    frag_adj = np.asarray(frag_adj * 255.0, dtype=np.uint8)
+
+    return frag_adj
 
 def equalize(fragments, frag_cache, ref, config):
     """
@@ -77,7 +88,7 @@ def equalize(fragments, frag_cache, ref, config):
             frag, mask = frag_cache.pop(val)
         else:
             frag, mask = val[0], val[1]
-        logging.info(f"Processing image {idx} with mask {mask.shape}")
+
         # Normalize fragment
         norm_frag = frag.astype(np.float32) / 255.0
         # Light optimization

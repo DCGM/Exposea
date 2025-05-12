@@ -1,15 +1,14 @@
 import os
+import os.path as osp
 import hydra
 import pickle
 import torch.cuda
 import datetime
 import logging
-import diskcache
 import tqdm
-from tensorboard.compat.tensorflow_stub.io.gfile import exists
 
 from HomogEst import HomogEstimator
-from Stitcher import Stitcher
+from Stitcher import Stitcher, ActualBlender
 from Optical import OpticalFlow
 from LightEqual import *
 
@@ -20,12 +19,6 @@ class StitchApp():
         # Config file
         self.config = config
         # Init cache dir
-        if self.config.cache.is_on:
-            self.cache = diskcache.Cache(self.config.cache.path, timeout=60*60, cull_limit=0, eviction_policy="none")
-            self.cache.clear()
-            self.cache.max_size = 1024 * 1024 * self.config.cache.size_mb
-        else:
-            self.cache = None
 
         self.pairs = config.data.img_pairs
 
@@ -47,29 +40,6 @@ class StitchApp():
         # debug printouts
         self.debug = self.config.debug
 
-    def __del__(self):
-        self.cache.clear()
-    # TODO Rename after refactor
-
-    def run_single(self):
-
-        if self.debug:
-            print("Torch cuda", torch.cuda.is_available())
-
-        # Make sure that the overview image is in final resolution
-        self.resize_reference()
-        # Estimate homographies
-        logging.info("Estimating homographies")
-        homographies = self.run_homog()
-        #
-        for idx, img_p in enumerate(self.frag_paths):
-            # Warp image with estimated homography
-            warp_fragment = self.stitcher.warp_fragment(homographies[idx], img_p)
-            # Run optical flow
-            flow_fragment = self.run_flow(self.ref_path, warp_fragment)
-            # Run light optimization
-            light_fragment = self.run_light_equal(self.ref_path, flow_fragment)
-
     def run(self):
         """
         Runs the main stitch app.
@@ -82,41 +52,41 @@ class StitchApp():
         self.resize_reference()
         # TODO CHECK IMG TYPES ALLWAYS FLOATS
         # TODO GLIMUR
+        # Memory rewrite
         # Estimate homographies
         logging.info("Estimating homographies")
         homographies = self.run_homog()
+        # Initialize progressive blender of fragments
+        prog_blend = ActualBlender(self.config)
 
-        # Apply the homography
-        logging.info("Warping images with estimated homography")
-        warped_images = self.stitcher.warp_images(homographies, self.frag_paths, self.cache)
+        for f_idx, frag_path in enumerate(self.frag_paths):
+            # Apply homography
+            homog_frag = homographies[f_idx]
 
-        # Stitch the images for debug output
-        if self.debug:
-            stitched = self.stitcher.blend("weighted", args={"fragments":warped_images, "cache": self.cache})
-            cv.imwrite("./plots/homog_stitch.jpg", stitched)
+            # Apply the homography
+            logging.info("Warping images with estimated homography")
+            warped_fragment, frag_mask = self.stitcher.warp_image(homog_frag, frag_path)
 
-        # Warp images with optical flow
-        logging.info("Estimating optical flow")
-        flow_warped_images = self.run_flow(self.ref_path, warped_images)
-        # Del due to memory consumption
-        del warped_images
+            # Debug output
+            if self.debug:
+                cv.imwrite(f"./plots/homog_{f_idx}.jpg", warped_fragment)
 
-        # Stitch the images for debug output
-        if self.debug:
-            stitched = self.stitcher.blend("weighted", args={"fragments":flow_warped_images, "cache": self.cache})
-            cv.imwrite("./plots/flow_stitch.jpg", stitched)
+            # Warp fragment with optical flow
+            logging.info("Estimating optical flow")
+            flow_fragment = self.run_flow(self.ref_path, warped_fragment, osp.basename(frag_path))
+
+            # Images for debug output
+            if self.debug:
+                cv.imwrite(f"./plots/flow_{f_idx}.jpg", flow_fragment)
+
+            logging.info("Adjusting light")
+            light_adjusted = self.run_light_equal(self.ref_path, flow_fragment, frag_mask)
+
+            logging.info("Adding fragment to final blend")
+            prog_blend.add_fragment(light_adjusted, frag_mask, homog_frag, f_idx)
 
 
-        logging.info("Adjusting light")
-        light_adjusted = self.run_light_equal(self.ref_path, flow_warped_images)
-        # Del due to memory consumption
-        del flow_warped_images
-
-        logging.info("Stitching actual image")
-        # Flow Stitch
-        stitched = self.stitcher.blend(self.config.stitcher.mode, args={"imgs":light_adjusted, "Hs":homographies, 'cache':self.cache})
-        cv.imwrite("./plots/final_flow_stitch.jpg", stitched)
-
+        cv.imwrite("./plots/final_flow_stitch.jpg", prog_blend.get_current_blend())
 
     def run_homog(self):
         """
@@ -131,52 +101,54 @@ class StitchApp():
                 homographies = pickle.load(f)
         else:
             # The img paths is sent to load the images in correct format for feature extraction and matching
-            homographies, _ = self.homog_estimator.new_register(self.ref_path, self.frag_paths)
+            homographies, _ = self.homog_estimator.register(self.ref_path, self.frag_paths)
             if self.config.homog.save:
+                os.makedirs(self.config.homog.save, exist_ok=True)
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 with open(f"cache/homogs/opt_hom_{timestamp}.pkl", "wb") as f:
                     pickle.dump(homographies, f)
 
         return homographies
 
-    def run_flow(self, ref_path, warped_fragments):
+    def run_flow(self, ref_path, warped_frag, frag_name):
         """
-        Runs the flow estimation
+        Gets optical flow, either loaded or calculated
         Args:
-            warped_images (dict): Dict of homography warped images {name: (image, mask)}
+           ref_path:
+           warped_images:
+           frag_name:
 
         Returns:
+
         """
-        # Store or load flows
+        # Check if load optical else compute flow
         if self.config.optical.load:
-            with open(self.config.optical.load, "rb") as f:
-                saved_flows = pickle.load(f)
-                flow_warped_images = []
-                if self.config.cache.is_on:
-                    for key, val in enumerate(saved_flows):
-                        self.cache[key] = val
-                        flow_warped_images.append(key)
-                else:
-                    flow_warped_images = saved_flows
-
+            # Check if path exist else compute flow
+            path = osp.join(self.config.optical.load, f'flow_{self.config.exp_name}_{frag_name}.npy')
+            if osp.exists(path):
+                with open(path, "rb") as f:
+                    flow = np.load(f)
+            else:
+                print(f"Optical flow {frag_name} not found")
+                # Get ref image and compute flow
+                ref_img = cv.imread(ref_path)
+                flow = self.optical.estimate_flow(ref_img, warped_frag)
         else:
+            # Get ref image and compute flow
             ref_img = cv.imread(ref_path)
-            flow_warped_images = self.run_optical_flow(ref_img, warped_fragments)
-            # Save flows if needed
-            if self.config.homog.save:
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                with open(f"cache/flows/flows_{timestamp}.pkl", "wb") as f:
-                    if self.cache is not None:
-                        collect = {}
-                        for key in flow_warped_images:
-                            collect[key] = self.cache[key]
-                        pickle.dump(collect, f)
-                    else:
-                        pickle.dump(flow_warped_images, f)
+            flow = self.optical.estimate_flow(ref_img, warped_frag)
+        # If save path specified save flows
+        if self.config.optical.save:
+            os.makedirs(self.config.optical.save, exist_ok=True)
+            path = osp.join(self.config.optical.save, f'flow_{self.config.exp_name}_{frag_name}.npy')
+            with open(path, "wb") as f:
+                np.save(f, flow)
+        flow_frag = self.optical.warp_image(warped_frag, flow)
+        return flow_frag
 
-        return flow_warped_images
 
-    def run_light_equal(self, ref, flow_warped_images):
+
+    def run_light_equal(self, ref_path, flow_fragment, frag_mask):
         """
         Runs the flow estimation
         Args:
@@ -186,8 +158,8 @@ class StitchApp():
         Returns:
         """
         # Equalize light
-        ref_img = cv.imread(ref)
-        light_adjusted = equalize(flow_warped_images, self.cache, ref_img, config=self.config)
+        ref_img = cv.imread(ref_path)
+        light_adjusted = equalize_frag(flow_fragment, frag_mask.copy(), ref_img, config=self.config)
 
         return light_adjusted
 
@@ -224,42 +196,6 @@ class StitchApp():
                 frag_path.append(img_p)
         return ref_path, frag_path
 
-    def run_optical_flow(self, ref_img, warp_frags):
-
-        img_pbar = tqdm.tqdm(total=len(warp_frags), desc='Processing fragments using optical flow',
-                        position=0, leave=False, ncols=100, colour='green')
-
-        flow_fragments = []
-        for key, val in enumerate(warp_frags):
-            if self.cache is not None:
-                frag, mask = self.cache.pop(val)
-            else:
-                frag, mask = val
-
-            flow = self.optical.estimate_flow(ref_img, frag)
-            # Apply image flows
-            flow_frag = self.optical.warp_image(frag, flow)
-            # Save debug img
-            if self.config.optical.debug:
-                cv.imwrite(f"./plots/before_warp_{key}.jpg", frag)
-                cv.imwrite(f"./plots/warped_flow_{key}.jpg", flow_frag)
-            # Cache 2
-            if self.cache is not None:
-                cache_key = f"flow_frag_{key}"
-                with open("cache/test_pkl.pkl", "wb") as f:
-                    pickle.dump((flow_frag, mask), f)
-                self.cache.add(cache_key, (flow_frag, mask))
-                flow_fragments.append(cache_key)
-            else:
-                flow_fragments.append((flow_frag, mask))
-            img_pbar.update(1)
-
-        return flow_fragments
-
-
-    def compose_final_img(self, warped_flows, overview):
-        pass
-
 
 def create_dirs():
     os.makedirs("plots", exist_ok=True)
@@ -267,7 +203,7 @@ def create_dirs():
     os.makedirs("cache/homogs", exist_ok=True)
     os.makedirs("cache/flows", exist_ok=True)
 # Launch the application for stitching the image
-@hydra.main(version_base=None, config_path="configs", config_name="david")
+@hydra.main(version_base=None, config_path="configs", config_name="debug")
 def main(config):
     app = StitchApp(config)
     app.run()

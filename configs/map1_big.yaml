@@ -25,7 +25,7 @@ homog:
 optical:
   model: memflow_t
   checkpoint: sintel
-  input_size: [540, 960] # Size of input patches for model
+  input_size: [1080, 1920] # Size of input patches for model
   patch_overlap: [40,40] # Overlap of input patches
   subsample_factor: # [1,1] TODO Not working
 
@@ -50,7 +50,7 @@ data:
   img_overview: 0.JPG
   img_folder: "imgs/example1"
   img_pairs: [[0,1],[0,2],[0,3],[0,4],[0,5],[0,6],[0,7]]
-  final_res: [6400, 8400] # Final resolution of output
+  final_res: [19200, 25200]
 
 # Hydra exec dir to project dir
 hydra:
