@@ -31,7 +31,7 @@ optical:
 
   # Load saved flows
   load: #cache/flows # Path to flow
-  save: #cache/flows
+  save: cache/flows
   debug: False
 
 # Parameters regarding stitching

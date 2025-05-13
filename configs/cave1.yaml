@@ -1,19 +1,20 @@
 debug: True # To output global debug values
+exp_name: cave1 # Used for saving partial outputs
 
 # Parameters regarding homography estimation
 homog:
   type: default
-  feature_extractor: SuperPoint
-  max_feat_points: 4096
-  feature_matcher: LightGlue
-  do_optimization: False
+  feature_extractor: SuperPoint # Method to extract features
+  max_feat_points: 4096 # Maximum feature points to find
+  feature_matcher: LightGlue # Method to match features
+  do_optimization: False # Turn optimization on
   max_matches: 200 # Max points to match
   optimizer: marek # Type of optimization
 
   # Preload saved homographies
-  load: opt_hom_20250422_113859.pkl
-  save: True
-  debug: True
+  load: #cache/homogs/opt_hom_20250512_092605.pkl
+  save: #cache/homogs
+  debug: False
 
 # Parameters regarding optical flow estimation
 optical:
@@ -43,7 +44,4 @@ stitcher:
 data:
   img_overview: 0.JPG
   img_folder: "imgs/example3"
-  img_pairs: [[0,1],[0,2],[0,3],[0,4],[0,5],[0,6],[0,7],[0,8],[0,9],
-              [0,10], [0,11], [0,12], [0,13],[0,14], [0,15], [0,16],
-              [0,17], [0,18], [0,19], [0,20]]
   final_res: [6400, 8400]

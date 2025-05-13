@@ -4,6 +4,7 @@ import hydra
 import pickle
 import torch.cuda
 import datetime
+import glymur
 
 from HomogEst import HomogEstimator
 from Stitcher import Stitcher, ActualBlender
@@ -81,8 +82,9 @@ class StitchApp():
             logging.info("Adding fragment to final blend")
             prog_blend.add_fragment(light_adjusted, frag_mask, homog_frag, f_idx)
 
-
-        cv.imwrite("./plots/final_flow_stitch.jpg", prog_blend.get_current_blend())
+        final_img = prog_blend.get_current_blend()
+        glymur.Jp2k("./plots/final_stitch_jp2k.jp2", data=final_img)
+        cv.imwrite("./plots/final_stitch.jpg", final_img)
 
     def run_homog(self):
         """
@@ -199,7 +201,7 @@ def create_dirs():
     os.makedirs("cache/homogs", exist_ok=True)
     os.makedirs("cache/flows", exist_ok=True)
 # Launch the application for stitching the image
-@hydra.main(version_base=None, config_path="configs", config_name="debug")
+@hydra.main(version_base=None, config_path="configs", config_name="david")
 def main(config):
     app = StitchApp(config)
     app.run()

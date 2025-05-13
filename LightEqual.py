@@ -64,47 +64,56 @@ def equalize_frag(flow_fragment, mask, ref_img, config):
     ref_norm = ref_img.astype(np.float32) / 255.0
     # Normalize fragment
     norm_frag = flow_fragment.astype(np.float32) / 255.0
+    # Cut out only the area of fragment not the whole final res
+    y_min, x_min = np.argwhere(mask[:, :, 0]).min(axis=0)  # Get min row and column
+    y_max, x_max = np.argwhere(mask[:, :, 0]).max(axis=0)  # Get max row and column
+    cut_frag = norm_frag[y_min:y_max, x_min:x_max]
+    cut_ref = ref_norm[y_min:y_max, x_min:x_max]
+    mask_cut = mask[y_min:y_max, x_min:x_max]
+
     # Light optimization
-    frag_adj = spatial_light_adjustment(norm_frag, ref_norm, mask, config)
+    frag_cut = spatial_light_adjustment(cut_frag, cut_ref, mask_cut, config)
+    frag_adj = np.zeros_like(norm_frag)
+    frag_adj[y_min:y_max, x_min:x_max] = frag_cut
     # Rescale it back to 255
     frag_adj = np.asarray(frag_adj * 255.0, dtype=np.uint8)
 
     return frag_adj
-
-def equalize(fragments, frag_cache, ref, config):
-    """
-    Main function that iterates over all fragments to equalize them with regards to reference
-    :param
-         imgs dict {name: (image, mask)}: Dictionary contains all images with reference. Every image has its own mask
-    :return: dict {name: (image, mask)} where images are adjusted
-    """
-    # Get reference image and normalize it
-    ref_norm = ref.astype(np.float32) / 255.0
-
-    # Iterate over all images (skip ref) and equalize light. Store the resulting image to adjusted dict
-    adjusted = []
-    for idx, val in enumerate(fragments):
-        if frag_cache is not None:
-            frag, mask = frag_cache.pop(val)
-        else:
-            frag, mask = val[0], val[1]
-
-        # Normalize fragment
-        norm_frag = frag.astype(np.float32) / 255.0
-        # Light optimization
-        frag_adj = spatial_light_adjustment(norm_frag, ref_norm, mask, config)
-
-        # Rescale it back to 255
-        frag_adj = np.asarray(frag_adj * 255.0, dtype=np.uint8)
-        # Append the result
-        if frag_cache is not None:
-            frag_key = f"light_adjusted_{idx}"
-            frag_cache[frag_key] = (frag_adj, mask)
-            adjusted.append(frag_key)
-        else:
-            adjusted.append((frag_adj, mask))
-
-    return adjusted
+#
+# def equalize(fragments, frag_cache, ref, config):
+#     """
+#     Main function that iterates over all fragments to equalize them with regards to reference
+#     :param
+#          imgs dict {name: (image, mask)}: Dictionary contains all images with reference. Every image has its own mask
+#     :return: dict {name: (image, mask)} where images are adjusted
+#     """
+#     # Get reference image and normalize it
+#     ref_norm = ref.astype(np.float32) / 255.0
+#
+#     # Iterate over all images (skip ref) and equalize light. Store the resulting image to adjusted dict
+#     adjusted = []
+#     for idx, val in enumerate(fragments):
+#         if frag_cache is not None:
+#             frag, mask = frag_cache.pop(val)
+#         else:
+#             frag, mask = val[0], val[1]
+#
+#         # Normalize fragment
+#         norm_frag = frag.astype(np.float32) / 255.0
+#         # Light optimization
+#         frag_adj = spatial_light_adjustment(norm_frag, ref_norm, mask, config)
+#
+#         # Rescale it back to 255
+#         frag_adj = np.asarray(frag_adj * 255.0, dtype=np.uint8)
+#         # Append the result
+#         if frag_cache is not None:
+#             frag_key = f"light_adjusted_{idx}"
+#             frag_cache[frag_key] = (frag_adj, mask)
+#             adjusted.append(frag_key)
+#         else:
+#             adjusted.append((frag_adj, mask))
+#
+#     return adjusted
 
 
 

@@ -59,7 +59,6 @@ class HomogEstimator:
         self.debug = config.homog.debug
 
 
-    @profile
     def register(self, ref_path: str, frag_paths: list[str]):
         # TODO Switch to this
         # Get ref img

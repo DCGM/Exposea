@@ -1,37 +1,34 @@
 debug: True # To output global debug values
-
-cache:
-  is_on: True
-  path: cache/diskcache/
-  size_mb: 10000
+exp_name: david_big_map # Used for saving partial outputs
 
 # Parameters regarding homography estimation
 homog:
   type: default
-  feature_extractor: SuperPoint
-  max_feat_points: 4096
-  feature_matcher: LightGlue
-  do_optimization: False
+  feature_extractor: SuperPoint # Method to extract features
+  max_feat_points: 4096 # Maximum feature points to find
+  feature_matcher: LightGlue # Method to match features
+  do_optimization: False # Turn optimization on
   max_matches: 200 # Max points to match
   optimizer: marek # Type of optimization
 
   # Preload saved homographies
-  load: #cache/homogs/opt_hom_20250423_145103.pkl
-  save: True
-  debug: True
+  load:
+  save:
+  debug: False
 
 # Parameters regarding optical flow estimation
 optical:
-  model: memflow_t
-  checkpoint: sintel
-  input_size: [540, 960] # Y,X Size of input patches for model
-  patch_overlap: [40,40] # Y,X Overlap of input patches
+  model: ms_raft_p # sea_raft_m # memflow_t
+  checkpoint: mixed # spring # sintel
+  input_size: [840, 1260] # Y,X Size of input patches for model
+  patch_overlap: [100,100] # Y,X Overlap of input patches
   subsample_factor: # [1,1] TODO Not working
 
   # Load saved flows
-  load: #cache/flows/flows_20250423_153203.pkl
-  save: False
-  debug: True
+  load: # Path to FOLDER with saved flows
+  save: # Path to FOLDER where save homogs if empty no save
+  debug: False
+
 
 # Parameters regarding stitching
 stitcher:
@@ -42,13 +39,10 @@ stitcher:
   loss_type: "mse"
   lr: 0.1
   optim_steps: 50
-  num_iters: 50
   blend_width: 100
 
+# Parameters regarding stitching
 data:
-  img_overview: 0.jpg
-  img_folder: "imgs/example_d"
-  img_pairs: [[0,1],[0,2],[0,3],[0,4],[0,5],[0,6],[0,7],[0,8],[0,9],
-              [0,10], [0,11], [0,12], [0,13],[0,14], [0,15], [0,16],
-              [0,17], [0,18], [0,19], [0,20],[0,21],[0,22],[0,23],[0,24],[0,25],[0,26],[0,27],[0,28],[0,29]]
-  final_res: [5956, 7535]
+  img_folder: "imgs/example_d" # Path to the images
+  img_overview: 0.jpg # Name of overview image contained in img folder
+  final_res: [14000, 18400] # Final resolution of image
