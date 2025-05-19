@@ -4,7 +4,7 @@ import hydra
 import pickle
 import torch.cuda
 import datetime
-import glymur
+#import glymur
 
 from HomogEst import HomogEstimator
 from Stitcher import Stitcher, ActualBlender
@@ -41,8 +41,10 @@ class StitchApp():
         """
         Runs the main stitch app.
         """
+
         if self.debug:
             print("Torch cuda", torch.cuda.is_available())
+
 
         # Make sure that the overview image is in final resolution
         # TODO Change this
@@ -57,6 +59,8 @@ class StitchApp():
         prog_blend = ActualBlender(self.config)
 
         for f_idx, frag_path in enumerate(self.frag_paths):
+            torch.cuda.reset_peak_memory_stats()
+            self.debug_idx = f_idx
             # Apply homography
             homog_frag = homographies[f_idx]
 
@@ -81,9 +85,11 @@ class StitchApp():
 
             logging.info("Adding fragment to final blend")
             prog_blend.add_fragment(light_adjusted, frag_mask, homog_frag, f_idx)
+            peak = torch.cuda.max_memory_allocated()
+            logging.info(f"Peak usage: {peak / 1024 ** 2:.2f} MB")
 
         final_img = prog_blend.get_current_blend()
-        glymur.Jp2k("./plots/final_stitch_jp2k.jp2", data=final_img)
+        # glymur.Jp2k("./plots/final_stitch_jp2k.jp2", data=final_img)
         cv.imwrite("./plots/final_stitch.jpg", final_img)
 
     def run_homog(self):
@@ -130,11 +136,11 @@ class StitchApp():
                 print(f"Optical flow {frag_name} not found")
                 # Get ref image and compute flow
                 ref_img = cv.imread(ref_path)
-                flow = self.optical.estimate_flow(ref_img, warped_frag)
+                flow = self.optical.estimate_flow(ref_img, warped_frag, self.debug_idx)
         else:
             # Get ref image and compute flow
             ref_img = cv.imread(ref_path)
-            flow = self.optical.estimate_flow(ref_img, warped_frag)
+            flow = self.optical.estimate_flow(ref_img, warped_frag,  self.debug_idx)
         # If save path specified save flows
         if self.config.optical.save:
             os.makedirs(self.config.optical.save, exist_ok=True)
@@ -201,7 +207,7 @@ def create_dirs():
     os.makedirs("cache/homogs", exist_ok=True)
     os.makedirs("cache/flows", exist_ok=True)
 # Launch the application for stitching the image
-@hydra.main(version_base=None, config_path="configs", config_name="debug")
+@hydra.main(version_base=None, config_path="configs", config_name="david")
 def main(config):
     create_dirs()
     app = StitchApp(config)

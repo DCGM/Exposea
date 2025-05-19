@@ -18,12 +18,16 @@ homog:
 
 # Parameters regarding optical flow estimation
 optical:
-  model: ms_raft_p # sea_raft_m # memflow_t
-  checkpoint: mixed # spring # sintel
-  input_size: [840, 1260] # Y,X Size of input patches for model
-  patch_overlap: [100,100] # Y,X Overlap of input patches
-  subsample_factor: # [1,1] TODO Not working
-
+  model: memflow_t
+  checkpoint: sintel
+  input_size: [540, 960] # Size of input patches for model
+  patch_overlap: [40,40] # Overlap of input patches
+  # For image adjustment during calculation of optical flow
+  adjust: True
+  adjust_params:
+    debug: True
+    gaus_blur_sigma: 1.0
+    subsample_factor: 0.5 # Double th
   # Load saved flows
   load: # Path to FOLDER with saved flows
   save: # Path to FOLDER where save homogs if empty no save
