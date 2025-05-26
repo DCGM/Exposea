@@ -1,4 +1,6 @@
 import copy
+import logging
+
 import torch
 import ptlflow
 from ptlflow.utils import flow_utils
@@ -7,7 +9,8 @@ import cv2 as cv
 import os
 import numpy as np
 from tqdm import tqdm
-
+from memory_profiler import profile
+import torch.profiler
 
 class OpticalFlow:
 
@@ -124,7 +127,11 @@ class OpticalFlow:
         return flow_patches
 
     def estimate_flow(self, ref_img, frag_img, debug_idx=0):
-
+        # with torch.profiler.profile(
+        #         activities=[torch.profiler.ProfilerActivity.CUDA],
+        #         profile_memory=True,
+        #         with_stack=True
+        # ) as prof:
         # Get the overlapping region  for optical flow estimation
         overlap1, overlap2 = self.get_overlap_region(ref_img, frag_img)
         assert overlap1.shape == overlap2.shape
@@ -180,6 +187,7 @@ class OpticalFlow:
             flow_in_ov_img = self.np_flow_to_img(flow_in_ov)
             cv.imwrite(f"./plots/flow_in_ov_img_{debug_idx}.jpg", flow_in_ov_img)
 
+        #logging.warning(prof.key_averages().table(sort_by="self_cuda_memory_usage", row_limit=10))
         return flow_in_ov
 
 

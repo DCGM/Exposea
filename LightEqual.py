@@ -59,6 +59,51 @@ class SpatialLightParams(nn.Module):
         return adjusted_fragment
 
 
+def split_image(img, fragment_height, fragment_width):
+    img_h, img_w, _ = img.shape
+    fragments = []
+    for y in range(0, img_h, fragment_height):
+        for x in range(0, img_w, fragment_width):
+            frag = img[y:y+fragment_height, x:x+fragment_width]
+            fragments.append(((y, x), frag))
+    return fragments
+
+def compose_image(fragments, full_shape):
+    result = np.zeros(full_shape, dtype=np.float32)
+    for (y, x), frag in fragments:
+        h, w = frag.shape[:2]
+        result[y:y+h, x:x+w] = frag
+    return result
+
+def tile_equalize_fragments(flow_fragment, mask, ref_img, config):
+    # Get reference image and normalize it
+    ref_norm = ref_img.astype(np.float32) / 255.0
+    # Normalize fragment
+    norm_frag = flow_fragment.astype(np.float32) / 255.0
+    # Cut out only the area of fragment not the whole final res
+    y_min, x_min = np.argwhere(mask[:, :, 0]).min(axis=0)  # Get min row and column
+    y_max, x_max = np.argwhere(mask[:, :, 0]).max(axis=0)  # Get max row and column
+    cut_frag = norm_frag[y_min:y_max, x_min:x_max]
+    cut_ref = ref_norm[y_min:y_max, x_min:x_max]
+    mask_cut = mask[y_min:y_max, x_min:x_max]
+
+    tile_size = config.light_optim.tile_size
+    tile_frag = split_image(cut_frag, tile_size[1], tile_size[0])
+    tile_ref = split_image(cut_ref, tile_size[1], tile_size[0])
+    tile_mask = split_image(mask_cut, tile_size[1], tile_size[0])
+    adjusted_frags = []
+    for f, r, m in zip(tile_frag, tile_ref, tile_mask):
+        adjusted = spatial_light_adjustment(f[1], r[1], m[1], config)
+        adjusted_frags.append((f[0],adjusted))
+
+    composed = compose_image(adjusted_frags, cut_frag.shape)
+    frag_adj = np.zeros_like(flow_fragment, dtype=np.float32)
+    frag_adj[y_min:y_max, x_min:x_max] = composed   # Rescale it back to 255
+    frag_adj = np.asarray(frag_adj * 255.0, dtype=np.uint8)
+    cv.imwrite("plots/composed.jpg", frag_adj)
+    return frag_adj
+
+
 def equalize_frag(flow_fragment, mask, ref_img, config):
     # Get reference image and normalize it
     ref_norm = ref_img.astype(np.float32) / 255.0
@@ -71,6 +116,9 @@ def equalize_frag(flow_fragment, mask, ref_img, config):
     cut_ref = ref_norm[y_min:y_max, x_min:x_max]
     mask_cut = mask[y_min:y_max, x_min:x_max]
 
+    if config.debug:
+        logging.info(f"Equalizing fragment size: {cut_frag.shape}")
+
     # Light optimization
     frag_cut = spatial_light_adjustment(cut_frag, cut_ref, mask_cut, config)
     frag_adj = np.zeros_like(norm_frag)
@@ -79,42 +127,6 @@ def equalize_frag(flow_fragment, mask, ref_img, config):
     frag_adj = np.asarray(frag_adj * 255.0, dtype=np.uint8)
 
     return frag_adj
-#
-# def equalize(fragments, frag_cache, ref, config):
-#     """
-#     Main function that iterates over all fragments to equalize them with regards to reference
-#     :param
-#          imgs dict {name: (image, mask)}: Dictionary contains all images with reference. Every image has its own mask
-#     :return: dict {name: (image, mask)} where images are adjusted
-#     """
-#     # Get reference image and normalize it
-#     ref_norm = ref.astype(np.float32) / 255.0
-#
-#     # Iterate over all images (skip ref) and equalize light. Store the resulting image to adjusted dict
-#     adjusted = []
-#     for idx, val in enumerate(fragments):
-#         if frag_cache is not None:
-#             frag, mask = frag_cache.pop(val)
-#         else:
-#             frag, mask = val[0], val[1]
-#
-#         # Normalize fragment
-#         norm_frag = frag.astype(np.float32) / 255.0
-#         # Light optimization
-#         frag_adj = spatial_light_adjustment(norm_frag, ref_norm, mask, config)
-#
-#         # Rescale it back to 255
-#         frag_adj = np.asarray(frag_adj * 255.0, dtype=np.uint8)
-#         # Append the result
-#         if frag_cache is not None:
-#             frag_key = f"light_adjusted_{idx}"
-#             frag_cache[frag_key] = (frag_adj, mask)
-#             adjusted.append(frag_key)
-#         else:
-#             adjusted.append((frag_adj, mask))
-#
-#     return adjusted
-
 
 
 def spatial_light_adjustment(fragment, reference, mask, config):
@@ -163,9 +175,9 @@ def spatial_light_adjustment(fragment, reference, mask, config):
         optimizer = torch.optim.Adam(method.parameters(), lr=config.stitcher.lr)
 
         # Progress bar
-        pbar = tqdm.tqdm(total=config.stitcher.num_iters)
+        pbar = tqdm.tqdm(total=config.stitcher.optim_steps)
 
-        for i in range(config.stitcher.num_iters):
+        for i in range(config.stitcher.optim_steps):
             optimizer.zero_grad()
             # Upsample the correction map to full resolution
             adjusted_fragment = method.interpolate(frag)
@@ -205,7 +217,8 @@ def spatial_light_adjustment(fragment, reference, mask, config):
     # Adjust the tensor back to cv img representation
     adjusted_frag = adjusted_frag.detach().clamp(0, 1).cpu()
     adjusted_frag = adjusted_frag[0].numpy().transpose((1, 2, 0))
-
+    del method, frag, ref
+    torch.cuda.empty_cache()
     return adjusted_frag
 
 

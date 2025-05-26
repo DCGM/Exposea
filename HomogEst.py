@@ -58,7 +58,6 @@ class HomogEstimator:
 
         self.debug = config.homog.debug
 
-
     def register(self, ref_path: str, frag_paths: list[str]):
         # TODO Switch to this
         # Get ref img
@@ -86,7 +85,6 @@ class HomogEstimator:
             corrs.append(mkpts)
 
         return homographies, corrs
-
 
     def get_homography(self, feats1, feats2, matches12, pair):
         # Reshape the input

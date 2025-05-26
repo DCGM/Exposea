@@ -10,7 +10,7 @@ from HomogEst import HomogEstimator
 from Stitcher import Stitcher, ActualBlender
 from Optical import OpticalFlow
 from LightEqual import *
-
+from memory_profiler import profile
 
 class StitchApp():
 
@@ -37,6 +37,7 @@ class StitchApp():
         # debug printouts
         self.debug = self.config.debug
 
+    @profile
     def run(self):
         """
         Runs the main stitch app.
@@ -75,6 +76,8 @@ class StitchApp():
             # Warp fragment with optical flow
             logging.info("Estimating optical flow")
             flow_fragment = self.run_flow(self.ref_path, warped_fragment, osp.basename(frag_path))
+            # Memory clean
+            torch.cuda.empty_cache()
 
             # Images for debug output
             if self.debug:
@@ -85,8 +88,12 @@ class StitchApp():
 
             logging.info("Adding fragment to final blend")
             prog_blend.add_fragment(light_adjusted, frag_mask, homog_frag, f_idx)
+
             peak = torch.cuda.max_memory_allocated()
             logging.info(f"Peak usage: {peak / 1024 ** 2:.2f} MB")
+
+            # Memory clean
+            torch.cuda.empty_cache()
 
         final_img = prog_blend.get_current_blend()
         # glymur.Jp2k("./plots/final_stitch_jp2k.jp2", data=final_img)
@@ -163,7 +170,11 @@ class StitchApp():
         """
         # Equalize light
         ref_img = cv.imread(ref_path)
-        light_adjusted = equalize_frag(flow_fragment, frag_mask.copy(), ref_img, config=self.config)
+        # Tile the image for memory consumption
+        if self.config.light_optim.use_tile:
+            light_adjusted = tile_equalize_fragments(flow_fragment, frag_mask.copy(), ref_img, config=self.config)
+        else:
+            light_adjusted = equalize_frag(flow_fragment, frag_mask.copy(), ref_img, config=self.config)
 
         return light_adjusted
 
@@ -207,7 +218,7 @@ def create_dirs():
     os.makedirs("cache/homogs", exist_ok=True)
     os.makedirs("cache/flows", exist_ok=True)
 # Launch the application for stitching the image
-@hydra.main(version_base=None, config_path="configs", config_name="david")
+@hydra.main(version_base=None, config_path="configs", config_name="map1")
 def main(config):
     create_dirs()
     app = StitchApp(config)

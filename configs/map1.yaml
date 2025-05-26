@@ -39,6 +39,12 @@ optical:
   save: #cache/flows
   debug: False
 
+# Parameters for light optimization
+light_optim:
+  use_tile: True
+  tile_size: [2000,2000]
+
+
 # Parameters regarding stitching
 stitcher:
   mode: actual

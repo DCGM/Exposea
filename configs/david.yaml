@@ -39,7 +39,7 @@ stitcher:
   mode: actual
   grid_size: 32
   optim_mode: ["scale"]
-  optimizer: "LBFGS"
+  optimizer: "LBFGS" # "adam" # LBFGS
   loss_type: "mse"
   lr: 0.1
   optim_steps: 50

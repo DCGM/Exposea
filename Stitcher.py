@@ -8,7 +8,6 @@ Author: Ing. David Pukanec
 """
 
 import cv2 as cv
-import diskcache
 import numpy as np
 from memory_profiler import profile
 
@@ -124,6 +123,7 @@ class ActualBlender:
         # Accumulator for closest value to 1 this represent the best pixel so far
         self.progressive_val_accum = np.ones(res) * 99999
         self.best_idx_acum = np.ones(res) * -1
+
 
     def add_fragment(self, fragment, mask, homography, key):
 

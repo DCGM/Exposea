@@ -3,5 +3,5 @@ scipy
 tqdm
 hydra-core
 memory-profiler
-diskcache
 numpy<2
+opencv-python==4.10.0.84
