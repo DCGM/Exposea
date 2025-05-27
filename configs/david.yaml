@@ -1,4 +1,4 @@
-debug: True # To output global debug values
+debug: False # To output global debug values
 exp_name: david_big_map # Used for saving partial outputs
 
 # Parameters regarding homography estimation
@@ -23,15 +23,19 @@ optical:
   input_size: [540, 960] # Size of input patches for model
   patch_overlap: [40,40] # Overlap of input patches
   # For image adjustment during calculation of optical flow
-  adjust: True
+  adjust: False
   adjust_params:
-    debug: True
+    debug: False
     gaus_blur_sigma: 1.0
     subsample_factor: 0.5 # Double th
   # Load saved flows
   load: # Path to FOLDER with saved flows
   save: # Path to FOLDER where save homogs if empty no save
   debug: False
+
+light_optim:
+  use_tile: True
+  tile_size: [2000,2000]
 
 
 # Parameters regarding stitching
@@ -49,4 +53,5 @@ stitcher:
 data:
   img_folder: "imgs/example_d" # Path to the images
   img_overview: 0.jpg # Name of overview image contained in img folder
+  process_res: [6000, 8000]
   final_res: [14000, 18400] # Final resolution of image

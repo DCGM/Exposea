@@ -41,7 +41,7 @@ optical:
 
 # Parameters for light optimization
 light_optim:
-  use_tile: True
+  use_tile: False
   tile_size: [2000,2000]
 
 

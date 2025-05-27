@@ -15,7 +15,7 @@ homog:
   # Preload saved homographies
   load: #cache/homogs/opt_hom_20250512_092605.pkl
   save: #cache/homogs
-  debug: False
+  debug: True
 
 # Parameters regarding optical flow estimation
 optical:
@@ -33,7 +33,7 @@ optical:
   # Load saved flows
   load: #cache/flows/debug/ # Path to FOLDER with saved flows
   save: # cache/flows/debug/ # Path to FOLDER where save homogs if empty no save
-  debug: False
+  debug: True
 
 # Parameters for light optimization
 light_optim:
@@ -55,7 +55,8 @@ stitcher:
 data:
   img_folder: "imgs/debug_example" # Path to the images
   img_overview: 0.JPG # Name of overview image contained in img folder
-  final_res: [6400, 8400] # Final resolution of image
+  process_res: [6000, 8000]
+  final_res: [27000, 36000] # Final resolution of image
 
 # Hydra exec dir to project dir
 hydra:

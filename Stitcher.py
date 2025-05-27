@@ -106,6 +106,28 @@ class Stitcher():
 
         return stitched
 
+class DebugBlender:
+    def __init__(self, size,config):
+        self.config = config
+        self.alpha = 0.5
+        self.img = np.zeros((size[0], size[1], 3), dtype=np.float32)
+        self.mask = np.zeros((size[0], size[1]), dtype=bool)
+
+    def add_fragment(self, fragment, mask):
+
+        fragment = fragment.astype(np.float32)
+        weights = np.zeros_like(self.img)
+
+        self.img[mask] += fragment[mask]
+        weights[mask] += 1
+        weights[self.mask] += 1
+
+        acum_mask = weights > 0
+        self.img[acum_mask] = self.img[acum_mask] / weights[acum_mask]
+
+    def get_current_blend(self):
+        return self.img.astype(np.uint8)
+
 
 class ActualBlender:
     def __init__(self, config):

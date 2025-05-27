@@ -1,16 +1,19 @@
+import logging
 import os
 import os.path as osp
 import hydra
 import pickle
 import torch.cuda
 import datetime
-#import glymur
+
 
 from HomogEst import HomogEstimator
-from Stitcher import Stitcher, ActualBlender
+from Stitcher import Stitcher, ActualBlender, DebugBlender
 from Optical import OpticalFlow
 from LightEqual import *
-from memory_profiler import profile
+
+# For profile only
+from utils import timer
 
 class StitchApp():
 
@@ -37,7 +40,10 @@ class StitchApp():
         # debug printouts
         self.debug = self.config.debug
 
-    @profile
+        # Timer
+        self.run_timer, self.flow_timer, self.lo_timer = timer.Timer(), timer.Timer(), timer.Timer()
+
+
     def run(self):
         """
         Runs the main stitch app.
@@ -46,19 +52,24 @@ class StitchApp():
         if self.debug:
             print("Torch cuda", torch.cuda.is_available())
 
-
-        # Make sure that the overview image is in final resolution
-        # TODO Change this
-        self.resize_reference()
+        self.run_timer.tic()
+        # Make sure that the overview image is in compact resolution
+        # TODO Prerobit
+        self.resize_reference(self.config.data.process_res)
         # TODO CHECK IMG TYPES ALLWAYS FLOATS
         # TODO GLIMUR
         # Memory rewrite
         # Estimate homographies
         logging.info("Estimating homographies")
-        homographies = self.run_homog()
-        # Initialize progressive blender of fragments
-        prog_blend = ActualBlender(self.config)
+        homographies = self.run_homog(resize=True)
 
+        # Make sure the reference is in final resolution
+        self.resize_reference(self.config.data.final_res)
+
+        # Initialize progressive blender of fragments
+        homog_blender = DebugBlender(self.config.data.final_res, self.config)
+
+        prog_blend = ActualBlender(self.config)
         for f_idx, frag_path in enumerate(self.frag_paths):
             torch.cuda.reset_peak_memory_stats()
             self.debug_idx = f_idx
@@ -71,7 +82,8 @@ class StitchApp():
 
             # Debug output
             if self.debug:
-                cv.imwrite(f"./plots/homog_{f_idx}.jpg", warped_fragment)
+                homog_blender.add_fragment(warped_fragment, frag_mask)
+                cv.imwrite(f"./plots/homog_{f_idx}.jpg", homog_blender.get_current_blend())
 
             # Warp fragment with optical flow
             logging.info("Estimating optical flow")
@@ -99,7 +111,12 @@ class StitchApp():
         # glymur.Jp2k("./plots/final_stitch_jp2k.jp2", data=final_img)
         cv.imwrite("./plots/final_stitch.jpg", final_img)
 
-    def run_homog(self):
+        logging.info(f"Time | Optical flow {self.flow_timer.average_time}")
+        logging.info(f"Time | Light optim {self.lo_timer.average_time}")
+        logging.info(f"Time | Finished stitching {self.run_timer.toc(False)}")
+
+
+    def run_homog(self, resize=False):
         """
         Runs the homography estimation
         If save in config it saves the homographies
@@ -119,7 +136,20 @@ class StitchApp():
                 with open(f"cache/homogs/opt_hom_{timestamp}.pkl", "wb") as f:
                     pickle.dump(homographies, f)
 
-        return homographies
+        # Resize the homography to correct scale
+        if resize:
+            scale = self.config.data.final_res[0] / self.config.data.process_res[0]
+            scaled_homographies = []
+            for h  in homographies:
+                D = np.array([[scale, 0, 0],
+                              [0, scale, 0],
+                              [0, 0, 1]])
+                h_scaled = D @ h
+                scaled_homographies.append(h_scaled)
+
+            return scaled_homographies
+        else:
+            return homographies
 
     def run_flow(self, ref_path, warped_frag, frag_name):
         """
@@ -132,6 +162,7 @@ class StitchApp():
         Returns:
 
         """
+        self.flow_timer.tic()
         # Check if load optical else compute flow
         if self.config.optical.load:
             # Check if path exist else compute flow
@@ -155,6 +186,7 @@ class StitchApp():
             with open(path, "wb") as f:
                 np.save(f, flow)
         flow_frag = self.optical.warp_image(warped_frag, flow)
+        self.flow_timer.toc()
         return flow_frag
 
 
@@ -168,6 +200,7 @@ class StitchApp():
 
         Returns:
         """
+        self.lo_timer.tic()
         # Equalize light
         ref_img = cv.imread(ref_path)
         # Tile the image for memory consumption
@@ -176,16 +209,17 @@ class StitchApp():
         else:
             light_adjusted = equalize_frag(flow_fragment, frag_mask.copy(), ref_img, config=self.config)
 
+        self.lo_timer.toc()
         return light_adjusted
 
 
-    def resize_reference(self):
+    def resize_reference(self, size):
         """
         Resizes the reference image to final resolution
         Returns:
         """
         ref = cv.imread(self.ref_path)
-        h, w =  self.config.data.final_res
+        h, w = size
         ref = cv.resize(ref, (w,h), interpolation=cv.INTER_CUBIC)
         cv.imwrite(self.ref_path, ref)
 
@@ -218,7 +252,7 @@ def create_dirs():
     os.makedirs("cache/homogs", exist_ok=True)
     os.makedirs("cache/flows", exist_ok=True)
 # Launch the application for stitching the image
-@hydra.main(version_base=None, config_path="configs", config_name="map1")
+@hydra.main(version_base=None, config_path="configs", config_name="debug")
 def main(config):
     create_dirs()
     app = StitchApp(config)
