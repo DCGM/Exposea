@@ -1,5 +1,0 @@
-SeaRaft | Sintel | S | 432 960 | map1 | Bad Perf, Patches without feastures are bad
-SeaRaft | Sintel | M | 432 960 | map1 | Bad Perf, Patches without feastures are even worse
-
-MemFlow   | Sintel | - | 540 960 | map1 | Ok Perf, much more consistent flows
-MemFlow_T | Sintel | - | 540 960 | map1 | Better perf than MemFlow

@@ -91,6 +91,7 @@ def tile_equalize_fragments(flow_fragment, mask, ref_img, config):
     tile_frag = split_image(cut_frag, tile_size[1], tile_size[0])
     tile_ref = split_image(cut_ref, tile_size[1], tile_size[0])
     tile_mask = split_image(mask_cut, tile_size[1], tile_size[0])
+
     adjusted_frags = []
     for f, r, m in zip(tile_frag, tile_ref, tile_mask):
         adjusted = spatial_light_adjustment(f[1], r[1], m[1], config)
@@ -175,7 +176,7 @@ def spatial_light_adjustment(fragment, reference, mask, config):
         optimizer = torch.optim.Adam(method.parameters(), lr=config.stitcher.lr)
 
         # Progress bar
-        pbar = tqdm.tqdm(total=config.stitcher.optim_steps)
+        pbar = tqdm.tqdm(total=config.stitcher.optim_steps, leave=False, ncols=100, colour='green')
 
         for i in range(config.stitcher.optim_steps):
             optimizer.zero_grad()
@@ -198,7 +199,7 @@ def spatial_light_adjustment(fragment, reference, mask, config):
                                       tolerance_change=1e-12)
 
         # Progress bar
-        pbar = tqdm.tqdm(total=config.stitcher.optim_steps)
+        pbar = tqdm.tqdm(total=config.stitcher.optim_steps, leave=False, ncols=100, colour='green')
         def closure():
             optimizer.zero_grad()
             # Upsample the correction map to full resolution

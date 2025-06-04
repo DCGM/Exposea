@@ -1,32 +1,43 @@
 debug: True # To output global debug values
+exp_name: cave4 # Used for saving partial outputs
 
-# Parameters regarding homography estimation
 homog:
   type: default
-  feature_extractor: SuperPoint
-  max_feat_points: 4096
-  feature_matcher: LightGlue
-  do_optimization: False
+  feature_extractor: SuperPoint # Method to extract features
+  max_feat_points: 4096 # Maximum feature points to find
+  feature_matcher: LightGlue # Method to match features
+  do_optimization: False # Turn optimization on
   max_matches: 200 # Max points to match
   optimizer: marek # Type of optimization
 
   # Preload saved homographies
-  load:
-  save: True
-  debug: False
+  load: #cache/homogs/opt_hom_20250512_092605.pkl
+  save: #cache/homogs
+  debug: True
 
 # Parameters regarding optical flow estimation
 optical:
   model: memflow_t
   checkpoint: sintel
-  input_size: [540, 960] # Size of input patches for model
-  patch_overlap: [40,40] # Overlap of input patches
-  subsample_factor: # [1,1] TODO Not working
+  input_size: [1080, 1920] # Size of input patches for model
+  patch_overlap: [80, 80] # Overlap of input patches
+  # For image adjustment during calculation of optical flow
+  adjust: True
+  adjust_params:
+    debug: True
+    gaus_blur_sigma: 1.0
+    subsample_factor: 2 # 1 / subsample_factor
 
   # Load saved flows
-  load: # Path to flow
-  save: False
-  debug: False
+  load: #cache/flows/debug/ # Path to FOLDER with saved flows
+  save: # cache/flows/debug/ # Path to FOLDER where save homogs if empty no save
+  debug: True
+
+# Parameters for light optimization
+light_optim:
+  use_tile: True
+  tile_size: [2000,2000]
+
 
 # Parameters regarding stitching
 stitcher:
@@ -38,11 +49,10 @@ stitcher:
   lr: 0.1
   optim_steps: 50
   blend_width: 100
-
+  flow_margin: 50 # Margin width for shifted pixel on image borders
 
 data:
   img_overview: 0.JPG
-  img_folder: "imgs/example5"
-  img_pairs: [ [ 0,1 ],[ 0,2 ],[ 0,3 ],[ 0,4 ],[ 0,5 ],[ 0,6 ],[ 0,7 ],[ 0,8 ],[ 0,9 ],
-               [ 0,10 ], [ 0,11 ] ]
-  final_res: [ 6400, 14400 ]
+  img_folder: "imgs/cave4"
+  process_res: [ 3200, 7200 ]
+  final_res: [ 6400, 14400 ] # Final resolution of image

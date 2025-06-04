@@ -54,22 +54,21 @@ class StitchApp():
 
         self.run_timer.tic()
         # Make sure that the overview image is in compact resolution
-        # TODO Prerobit
-        self.resize_reference(self.config.data.process_res)
+        self.resize_reference(self.config.data.final_res)
         # TODO CHECK IMG TYPES ALLWAYS FLOATS
         # TODO GLIMUR
         # Memory rewrite
         # Estimate homographies
         logging.info("Estimating homographies")
-        homographies = self.run_homog(resize=True)
+        homographies = self.run_homog(resize=False)
 
-        # Make sure the reference is in final resolution
-        self.resize_reference(self.config.data.final_res)
+
 
         # Initialize progressive blender of fragments
         homog_blender = DebugBlender(self.config.data.final_res, self.config)
 
         prog_blend = ActualBlender(self.config)
+        stitch_progress = tqdm.tqdm(total=len(self.frag_paths), leave=True ,desc='Stitching images ', position=1, ncols=100, colour='blue')
         for f_idx, frag_path in enumerate(self.frag_paths):
             torch.cuda.reset_peak_memory_stats()
             self.debug_idx = f_idx
@@ -106,6 +105,7 @@ class StitchApp():
 
             # Memory clean
             torch.cuda.empty_cache()
+            stitch_progress.update(1)
 
         final_img = prog_blend.get_current_blend()
         # glymur.Jp2k("./plots/final_stitch_jp2k.jp2", data=final_img)
@@ -221,6 +221,7 @@ class StitchApp():
         ref = cv.imread(self.ref_path)
         h, w = size
         ref = cv.resize(ref, (w,h), interpolation=cv.INTER_CUBIC)
+        self.ref_path = "cache/ref_resized.png"
         cv.imwrite(self.ref_path, ref)
 
 
@@ -252,7 +253,7 @@ def create_dirs():
     os.makedirs("cache/homogs", exist_ok=True)
     os.makedirs("cache/flows", exist_ok=True)
 # Launch the application for stitching the image
-@hydra.main(version_base=None, config_path="configs", config_name="debug")
+@hydra.main(version_base=None, config_path="configs", config_name="cave3")
 def main(config):
     create_dirs()
     app = StitchApp(config)

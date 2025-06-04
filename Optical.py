@@ -201,7 +201,7 @@ class OpticalFlow:
 
         if config.subsample_factor:
             height, width = blurred_frag.shape[0],  blurred_frag.shape[1]
-            scale = config.subsample_factor
+            scale = 1 / config.subsample_factor
             new_size = (int(width * scale), int(height * scale))
             ds_frag = cv.resize(blurred_frag, new_size, interpolation=cv.INTER_AREA)
             ds_ref = cv.resize(reference, new_size, interpolation=cv.INTER_AREA)

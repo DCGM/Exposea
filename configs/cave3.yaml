@@ -1,34 +1,64 @@
-hydra:
-  run:
-    dir: .
+debug: True # To output global debug values
+exp_name: cave3 # Used for saving partial outputs
 
-debug: True
-stitch_type: actual
+
 homog:
   type: default
-  feature_extractor: SuperPoint
-  feature_matcher: LightGlue
-  do_optimization: False
-  max_matches: 200
-  optimizer: marek
+  feature_extractor: SuperPoint # Method to extract features
+  max_feat_points: 4096 # Maximum feature points to find
+  feature_matcher: LightGlue # Method to match features
+  do_optimization: False # Turn optimization on
+  max_matches: 200 # Max points to match
+  optimizer: marek # Type of optimization
+
+  adjust: False
+  adjust_params:
+    debug: True
+    gaus_blur_sigma: 1.0
+    subsample_factor: 2 # 1 / subsample_factor
+
+  # Preload saved homographies
+  load: #cache/homogs/opt_hom_20250512_092605.pkl
+  save: #cache/homogs
   debug: True
-  load_homog: opt_hom_20250303_220453.pkl
 
+# Parameters regarding optical flow estimation
 optical:
-  model: memflow
+  model: memflow_t
   checkpoint: sintel
-  input_size: [540, 960]
-  subsample_factor: # [1,1]
-  patch_overlap: [10,10]
-  load_flows:
+  input_size: [540, 960] # Size of input patches for model
+  patch_overlap: [40,40] # Overlap of input patches
+  # For image adjustment during calculation of optical flow
+  adjust: False
+  adjust_params:
+    debug: True
+    gaus_blur_sigma: 1.0
+    subsample_factor: 2 # 1 / subsample_factor
 
-  # For debugging
-  viz_patch: [13]
+  # Load saved flows
+  load: #cache/flows/debug/ # Path to FOLDER with saved flows
+  save: # cache/flows/debug/ # Path to FOLDER where save homogs if empty no save
+  debug: True
 
+# Parameters for light optimization
+light_optim:
+  use_tile: True
+  tile_size: [2000,2000]
+
+# Parameters regarding stitching
+stitcher:
+  mode: actual
+  grid_size: 32
+  optim_mode: ["scale"]
+  optimizer: "LBFGS"
+  loss_type: "mse"
+  lr: 0.1
+  optim_steps: 50
+  blend_width: 100
+  flow_margin: 50
 
 data:
   img_overview: 0.JPG
   img_folder: "imgs/example4"
-  img_pairs: [[0,1],[0,2],[0,3],[0,4],[0,5],[0,6],[0,7],[0,8],[0,9],
-              [0,10], [0,11], [0,12], [0,13],[0,14], [0,15]]
-  final_res: [6400, 8400]
+  process_res: [ 6400, 8400 ]
+  final_res: [ 6400, 8400 ] # Final resolution of image

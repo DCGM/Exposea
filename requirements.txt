@@ -1,3 +1,11 @@
+
+# PyTorch with CUDA 12.1 (this line is just a placeholder; actual install happens in Dockerfile)
+torch==2.3.0+cu121
+torchvision==0.18.0+cu121
+torchaudio==2.3.0+cu121
+-f https://download.pytorch.org/whl/cu121
+
+# Your other dependencies
 ptlflow
 scipy
 tqdm
@@ -5,3 +13,7 @@ hydra-core
 memory-profiler
 numpy<2
 opencv-python==4.10.0.84
+
+# LightGlue editable install — handled separately in Dockerfile
+-e ./LightGlue
+

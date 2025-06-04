@@ -136,7 +136,8 @@ class ActualBlender:
         self.config = config
         self.blend_width = config.stitcher.blend_width
         # Erosion kerlnel for feathered edges
-        self.erode_kernel = np.ones((2 * self.blend_width + 1, 2 * self.blend_width + 1), np.uint8)
+        self.erode_kernel = np.ones((2 * (self.blend_width + config.stitcher.flow_margin) + 1,
+                                           2 * (self.blend_width + config.stitcher.flow_margin) + 1), np.uint8)
 
         # Progressive blend image values are accumulated here
         self.progress_blend_img = np.zeros((res[0], res[1], 3), dtype=np.float32)

@@ -27,7 +27,7 @@ optical:
   adjust_params:
     debug: False
     gaus_blur_sigma: 1.0
-    subsample_factor: 0.5 # Double th
+    subsample_factor: 2 # 1 / subsample_factor
   # Load saved flows
   load: # Path to FOLDER with saved flows
   save: # Path to FOLDER where save homogs if empty no save
@@ -48,9 +48,11 @@ stitcher:
   lr: 0.1
   optim_steps: 50
   blend_width: 100
+  flow_margin: 50
 
 # Parameters regarding stitching
 data:
-  img_folder: "imgs/example_d" # Path to the images
-  img_overview: 0.jpg # Name of overview image contained in img folder
-  final_res: [9000, 11000] # Final resolution of image
+  img_folder: "imgs/cave1" # Path to the images
+  img_overview: 0.JPG # Name of overview image contained in img folder
+  process_res: [6000, 8000]
+  final_res: [6000, 8000] # Final resolution of image

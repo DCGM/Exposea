@@ -1,7 +1,6 @@
 debug: True # To output global debug values
 exp_name: debug # Used for saving partial outputs
 
-
 # Parameters regarding homography estimation
 homog:
   type: default
@@ -28,7 +27,7 @@ optical:
   adjust_params:
     debug: True
     gaus_blur_sigma: 1.0
-    subsample_factor: 0.5 # Double th
+    subsample_factor: 2 # 1 / subsample_factor
 
   # Load saved flows
   load: #cache/flows/debug/ # Path to FOLDER with saved flows
@@ -50,13 +49,13 @@ stitcher:
   lr: 0.1
   optim_steps: 50
   blend_width: 100
-
+  flow_margin: 50
 # Parameters regarding stitching
 data:
   img_folder: "imgs/debug_example" # Path to the images
   img_overview: 0.JPG # Name of overview image contained in img folder
   process_res: [6000, 8000]
-  final_res: [27000, 36000] # Final resolution of image
+  final_res: [6000, 8000] # Final resolution of image
 
 # Hydra exec dir to project dir
 hydra:
