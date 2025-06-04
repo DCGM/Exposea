@@ -1,6 +1,7 @@
 import os
 import os.path as osp
 import hydra
+from hydra import initialize, compose
 import pickle
 import torch.cuda
 import datetime
@@ -252,7 +253,7 @@ def create_dirs():
     os.makedirs("cache/homogs", exist_ok=True)
     os.makedirs("cache/flows", exist_ok=True)
 # Launch the application for stitching the image
-@hydra.main(version_base=None, config_path="configs", config_name="cave3")
+@hydra.main(version_base=None, config_path="configs", config_name="debug")
 def main(config):
     create_dirs()
     app = StitchApp(config)
