@@ -101,7 +101,7 @@ def tile_equalize_fragments(flow_fragment, mask, ref_img, config):
     frag_adj = np.zeros_like(flow_fragment, dtype=np.float32)
     frag_adj[y_min:y_max, x_min:x_max] = composed   # Rescale it back to 255
     frag_adj = np.asarray(frag_adj * 255.0, dtype=np.uint8)
-    cv.imwrite("plots/composed.jpg", frag_adj)
+    cv.imwrite("../plots/composed.jpg", frag_adj)
     return frag_adj
 
 

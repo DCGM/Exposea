@@ -1,4 +1,3 @@
-import logging
 import os
 import os.path as osp
 import hydra
@@ -7,10 +6,10 @@ import torch.cuda
 import datetime
 
 
-from HomogEst import HomogEstimator
-from Stitcher import Stitcher, ActualBlender, DebugBlender
-from Optical import OpticalFlow
-from LightEqual import *
+from modules.HomogEst import HomogEstimator
+from modules.Stitcher import Stitcher, ActualBlender, DebugBlender
+from modules.Optical import OpticalFlow
+from modules.LightEqual import *
 
 # For profile only
 from utils import timer
