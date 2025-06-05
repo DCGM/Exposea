@@ -1,11 +1,16 @@
+import logging
 import os
 import os.path as osp
+
 import hydra
 from hydra import initialize, compose
+from hydra.core.global_hydra import GlobalHydra
+
 import pickle
 import torch.cuda
 import datetime
 
+from omegaconf import OmegaConf
 
 from modules.HomogEst import HomogEstimator
 from modules.Stitcher import Stitcher, ActualBlender, DebugBlender
@@ -54,7 +59,7 @@ class StitchApp():
 
         self.run_timer.tic()
         # Make sure that the overview image is in compact resolution
-        self.resize_reference(self.config.data.final_res)
+        self.resize_reference(self.config.final_res)
         # TODO CHECK IMG TYPES ALLWAYS FLOATS
         # TODO GLIMUR
         # Memory rewrite
@@ -65,7 +70,7 @@ class StitchApp():
 
 
         # Initialize progressive blender of fragments
-        homog_blender = DebugBlender(self.config.data.final_res, self.config)
+        homog_blender = DebugBlender(self.config.final_res, self.config)
 
         prog_blend = ActualBlender(self.config)
         stitch_progress = tqdm.tqdm(total=len(self.frag_paths), leave=True ,desc='Stitching images ', position=1, ncols=100, colour='blue')
@@ -138,7 +143,7 @@ class StitchApp():
 
         # Resize the homography to correct scale
         if resize:
-            scale = self.config.data.final_res[0] / self.config.data.process_res[0]
+            scale = self.config.final_res[0] / self.config.process_res[0]
             scaled_homographies = []
             for h  in homographies:
                 D = np.array([[scale, 0, 0],
@@ -227,11 +232,11 @@ class StitchApp():
 
     def load_image_paths(self, sort):
 
-        img_names = os.listdir(self.config.data.img_folder)
-        overview_name = str(self.config.data.img_overview)
+        img_names = os.listdir(self.config.input_folder)
+        overview_name = str(self.config.img_overview)
         # Get overview image and save it separately for visualization
         if overview_name in img_names:
-            ref_path = os.path.join(self.config.data.img_folder, overview_name)
+            ref_path = os.path.join(self.config.input_folder, overview_name)
         else:
             raise ValueError("Overview image not found")
         if sort:
@@ -242,7 +247,7 @@ class StitchApp():
         frag_path = []
         for name in img_names:
             if name != overview_name:
-                img_p = os.path.join(self.config.data.img_folder, name)
+                img_p = os.path.join(self.config.input_folder, name)
                 frag_path.append(img_p)
         return ref_path, frag_path
 
@@ -252,10 +257,47 @@ def create_dirs():
     os.makedirs("cache", exist_ok=True)
     os.makedirs("cache/homogs", exist_ok=True)
     os.makedirs("cache/flows", exist_ok=True)
+
+
+def compose_configs(input_cfg):
+    if GlobalHydra.instance().is_initialized():
+        GlobalHydra.instance().clear()
+
+    logging.info("Loading required arguments")
+    with initialize(config_path='configs/presets/', version_base=None):
+        default_cfg = compose(config_name='default')
+        preset_cfg = compose(input_cfg.preset_name)
+
+    logging.info("Checking required arguments")
+
+    for req_args in list(default_cfg.app.required_args):
+        if req_args not in input_cfg.keys():
+            logging.error(f"Required argument {req_args} is not defined")
+            raise ValueError(f"Required argument {req_args} is missing")
+
+    logging.info("Composing configs")
+    # Merge them manually: later ones overwrite earlier ones
+    config = OmegaConf.merge(default_cfg, preset_cfg, input_cfg)
+
+    return config
+
+
+
 # Launch the application for stitching the image
-@hydra.main(version_base=None, config_path="configs", config_name="debug")
+@hydra.main(version_base=None, config_path="configs", config_name="in_cave1")
 def main(config):
+    # TODO Change
+    # Configure logging
+    logging.basicConfig(
+        filename="app_log.txt",
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+    )
+    # Crete caching dirs
     create_dirs()
+    # Merge configs, allows for specification of hand picked parameters
+    config = compose_configs(config)
+# Run main stitcher
     app = StitchApp(config)
     app.run()
 

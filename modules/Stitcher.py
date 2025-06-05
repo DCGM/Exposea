@@ -38,7 +38,7 @@ class Stitcher():
 
         # Get the corner of the final image
         x_min, y_min = (0, 0)
-        x_max, y_max = (self.config.data.final_res[1], self.config.data.final_res[0])
+        x_max, y_max = (self.config.final_res[1], self.config.final_res[0])
         # Compute translation homography to shift images to positive coordinates
         translation = np.array([[1, 0, -x_min], [0, 1, -y_min], [0, 0, 1]])
 
@@ -62,7 +62,7 @@ class Stitcher():
             cache = args['cache']
 
         x_min, y_min = (0, 0)
-        x_max, y_max = (self.config.data.final_res[1], self.config.data.final_res[0])
+        x_max, y_max = (self.config.final_res[1], self.config.final_res[0])
         stitched = np.zeros((y_max - y_min, x_max - x_min, 3), dtype=np.float32)
         acum = np.zeros((y_max - y_min, x_max - x_min, 3), dtype=np.uint8)
 
@@ -87,7 +87,7 @@ class Stitcher():
         # x_min, y_min = np.int32(corners.min(axis=0))
         # x_max, y_max = np.int32(corners.max(axis=0))
         x_min, y_min = (0, 0)
-        x_max, y_max = (self.config.data.final_res[1], self.config.data.final_res[0])
+        x_max, y_max = (self.config.final_res[1], self.config.final_res[0])
 
         alpha = 0.5
         stitched = np.zeros((y_max - y_min, x_max - x_min, 3), dtype=np.uint8)
@@ -131,7 +131,7 @@ class DebugBlender:
 
 class ActualBlender:
     def __init__(self, config):
-        res = (int(config.data.final_res[0]), int(config.data.final_res[1]))
+        res = (int(config.final_res[0]), int(config.final_res[1]))
 
         self.config = config
         self.blend_width = config.stitcher.blend_width

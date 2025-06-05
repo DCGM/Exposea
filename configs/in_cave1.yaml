@@ -1,0 +1,13 @@
+# Required parameters
+########################################################################
+exp_name: cave_1          # Used for saving partial outputs
+input_folder: "imgs/cave1"  # Path to the images
+output_folder: "plots/"
+img_overview: 0.JPG       # Name of overview image contained in img folder
+preset_name: p_normal
+########################################################################
+
+light_optim:
+  use_tile: True
+  tile_size: [2000,2000]
+

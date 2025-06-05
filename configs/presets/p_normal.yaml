@@ -1,0 +1,4 @@
+final_res: [ 6020, 8020 ]
+input_folder: "imgs/cave1"  # Path to the images
+output_folder: "plots/"
+img_overview: 0.JPG
