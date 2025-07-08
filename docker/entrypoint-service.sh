@@ -7,6 +7,7 @@ OUTPUT_DIR="/output"
 
 while true; do
   FOLDERS=("$INPUT_DIR"/*/)
+  echo $FOLDERS
   for dir in $FOLDERS; do
         [ -d "$dir" ] || continue
         base="$(basename "$dir")"

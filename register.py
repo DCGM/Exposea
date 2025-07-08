@@ -115,7 +115,7 @@ class StitchApp():
             stitch_progress.update(1)
 
         final_img = prog_blend.get_current_blend()
-        cv.imwrite(osp.join(self.out_dir, "final_stitch.jpg"), final_img)
+        cv.imwrite(osp.join(self.out_dir, "final_stitch.png"), final_img)
 
         self.logger.info(f"Time | Optical flow {self.flow_timer.average_time}")
         self.logger.info(f"Time | Light optim {self.lo_timer.average_time}")
