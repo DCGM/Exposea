@@ -15,4 +15,4 @@ memory-profiler
 numpy<2
 opencv-python==4.10.0.84
 
-lightglue @ git+https://github.com/cvg/LightGlue.git@releases/tag/v0.2
+lightglue @ git+https://github.com/cvg/LightGlue.git@v0.2
