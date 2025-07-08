@@ -3,6 +3,7 @@ import os
 import os.path as osp
 import argparse
 import shutil
+import subprocess
 
 import pprint
 import pickle
@@ -116,11 +117,32 @@ class StitchApp():
 
         final_img = prog_blend.get_current_blend()
         cv.imwrite(osp.join(self.out_dir, "final_stitch.png"), final_img)
+        self.save_in_jp2(osp.join(self.out_dir, "final_stitch.png"), osp.join(self.out_dir, "final_stitch.jp2"))
 
         self.logger.info(f"Time | Optical flow {self.flow_timer.average_time}")
         self.logger.info(f"Time | Light optim {self.lo_timer.average_time}")
         self.logger.info(f"Time | Finished stitching {self.run_timer.toc(False)}")
 
+    def save_in_jp2(self, i_path, o_pth):
+        cmd = [
+            'opj_compress',
+            '-i', i_path,
+            '-o', o_pth,
+            '-t', '4069,4096',
+            '-p', 'RPCL',
+            '-r', '1',
+            '-c', '[256,256]',
+            '-TLM',
+            '-M', '1',
+            '-SOP',
+            '-EPH'
+        ]
+
+        try:
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Error: opj_compress failed with exit code {e.returncode}")
+            raise
 
     def run_homog(self, resize=False):
         """
