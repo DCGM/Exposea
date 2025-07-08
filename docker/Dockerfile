@@ -4,7 +4,7 @@ FROM node:18 as git_stage
 
 WORKDIR /app
 RUN apt-get update && apt-get install -y git && apt-get purge -y --auto-remove  && rm -rf /var/lib/apt/lists/*
-ARG RELEASE_TAG="v0.0.1"
+ARG RELEASE_TAG="v0.0.2"
 RUN git clone --branch v0.0.2 --single-branch https://github.com/ikarus1211/StitcherA.git
  
 ####################################################################################333
