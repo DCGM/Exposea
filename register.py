@@ -1,11 +1,10 @@
 import logging
 import os
 import os.path as osp
+import argparse
+import shutil
 
-import hydra
-from hydra import initialize, compose
-from hydra.core.global_hydra import GlobalHydra
-
+import pprint
 import pickle
 import torch.cuda
 import datetime
@@ -23,15 +22,20 @@ from utils import timer
 class StitchApp():
 
     def __init__(self, config):
+        self.logger = logging.getLogger('STITCHER')
+        self.logger.info('Initializing STITCHER')
+        self.logger.info("Config:\n%s", pprint.pformat(config))
         # Config file
         self.config = config
-        # Init cache dir
-
+        # Output
+        self.out_dir = config.output_folder
+        self.img_dir = osp.join(config.input_folder, 'images')
         # TODO Change
         # Initialize homography estimator
         if self.config.homog.type == "default":
             self.homog_estimator = HomogEstimator(self.config)
         else:
+            self.logger.error("Unknown homog type: %s", self.config.homog.type)
             raise ValueError("Homography estimator type not implemented. Available types: default")
 
         # Optical flow initialization
@@ -55,7 +59,7 @@ class StitchApp():
         """
 
         if self.debug:
-            print("Torch cuda", torch.cuda.is_available())
+            self.logger.info("Torch cuda %s", torch.cuda.is_available())
 
         self.run_timer.tic()
         # Make sure that the overview image is in compact resolution
@@ -64,10 +68,8 @@ class StitchApp():
         # TODO GLIMUR
         # Memory rewrite
         # Estimate homographies
-        logging.info("Estimating homographies")
+        self.logger.info("Estimating homographies")
         homographies = self.run_homog(resize=False)
-
-
 
         # Initialize progressive blender of fragments
         homog_blender = DebugBlender(self.config.final_res, self.config)
@@ -81,7 +83,7 @@ class StitchApp():
             homog_frag = homographies[f_idx]
 
             # Apply the homography
-            logging.info("Warping images with estimated homography")
+            self.logger.info(f"Warping {f_idx} with estimated homography")
             warped_fragment, frag_mask = self.stitcher.warp_image(homog_frag, frag_path)
 
             # Debug output
@@ -90,7 +92,7 @@ class StitchApp():
                 cv.imwrite(f"./plots/homog_{f_idx}.jpg", homog_blender.get_current_blend())
 
             # Warp fragment with optical flow
-            logging.info("Estimating optical flow")
+            self.logger.info(f"Estimating {f_idx} optical flow")
             flow_fragment = self.run_flow(self.ref_path, warped_fragment, osp.basename(frag_path))
             # Memory clean
             torch.cuda.empty_cache()
@@ -99,26 +101,25 @@ class StitchApp():
             if self.debug:
                 cv.imwrite(f"./plots/flow_{f_idx}.jpg", flow_fragment)
 
-            logging.info("Adjusting light")
+            self.logger.info(f"Adjusting {f_idx} light")
             light_adjusted = self.run_light_equal(self.ref_path, flow_fragment, frag_mask)
 
-            logging.info("Adding fragment to final blend")
+            self.logger.info(f"Adding {f_idx} to final blend")
             prog_blend.add_fragment(light_adjusted, frag_mask, homog_frag, f_idx)
 
             peak = torch.cuda.max_memory_allocated()
-            logging.info(f"Peak usage: {peak / 1024 ** 2:.2f} MB")
+            self.logger.info(f"Peak usage: {peak / 1024 ** 2:.2f} MB")
 
             # Memory clean
             torch.cuda.empty_cache()
             stitch_progress.update(1)
 
         final_img = prog_blend.get_current_blend()
-        # glymur.Jp2k("./plots/final_stitch_jp2k.jp2", data=final_img)
-        cv.imwrite("./plots/final_stitch.jpg", final_img)
+        cv.imwrite(osp.join(self.out_dir, "final_stitch.jpg"), final_img)
 
-        logging.info(f"Time | Optical flow {self.flow_timer.average_time}")
-        logging.info(f"Time | Light optim {self.lo_timer.average_time}")
-        logging.info(f"Time | Finished stitching {self.run_timer.toc(False)}")
+        self.logger.info(f"Time | Optical flow {self.flow_timer.average_time}")
+        self.logger.info(f"Time | Light optim {self.lo_timer.average_time}")
+        self.logger.info(f"Time | Finished stitching {self.run_timer.toc(False)}")
 
 
     def run_homog(self, resize=False):
@@ -232,11 +233,11 @@ class StitchApp():
 
     def load_image_paths(self, sort):
 
-        img_names = os.listdir(self.config.input_folder)
+        img_names = os.listdir(self.img_dir)
         overview_name = str(self.config.img_overview)
         # Get overview image and save it separately for visualization
         if overview_name in img_names:
-            ref_path = os.path.join(self.config.input_folder, overview_name)
+            ref_path = os.path.join(self.img_dir, overview_name)
         else:
             raise ValueError("Overview image not found")
         if sort:
@@ -247,57 +248,121 @@ class StitchApp():
         frag_path = []
         for name in img_names:
             if name != overview_name:
-                img_p = os.path.join(self.config.input_folder, name)
+                img_p = os.path.join(self.img_dir, name)
                 frag_path.append(img_p)
         return ref_path, frag_path
 
 
-def create_dirs():
+
+def merge_dicts(default, override):
+    for k, v in override.items():
+        if isinstance(v, dict) and k in default and isinstance(default[k], dict):
+            merge_dicts(default[k], v)
+        else:
+            default[k] = v
+    return default
+
+
+def compose_configs(args):
+    logger = logging.getLogger('INITIALIZE')
+    # Loading input config
+    if not os.path.exists(osp.join(args.input, 'config.yaml')):
+        logger.error(f"Config file {osp.join(args.input, 'config.yaml')} not found")
+        raise FileNotFoundError(f"Config file not found: {osp.join(args.input, 'config.yaml')}")
+    logger.info(f"Loading input config from {osp.join(args.input, 'config.yaml')}")
+    input_cfg = OmegaConf.load(osp.join(args.input, 'config.yaml'))
+
+    # Load default config
+    logger.info(f"Loading default config from configs/presets/default.yaml")
+    default_cfg = OmegaConf.load("configs/presets/default.yaml")
+    OmegaConf.set_struct(default_cfg, False)
+
+    # Load preset if not specified load p_normal
+    if hasattr(input_cfg, "preset_name"):
+        logger.info(f"Loading preset {input_cfg.preset_name}")
+        preset_cfg = OmegaConf.load(f"configs/presets/{input_cfg.preset_name}.yaml")
+    else:
+        logger.warning(f"! Preset not specified ! Loading p_normal.yaml")
+        preset_cfg = OmegaConf.load(f"configs/presets/p_normal.yaml")
+    OmegaConf.set_struct(preset_cfg, False)
+
+    # Merge preset wit default
+    preset_merged = OmegaConf.merge(default_cfg, preset_cfg)
+
+    # Merge input cfg
+    logger.info("Merging input cfg")
+    OmegaConf.set_struct(input_cfg, False)
+    config = OmegaConf.merge(preset_merged, input_cfg)
+    logger.info("Config:\n%s", pprint.pformat(config))
+    # Create output dir and adjust paths
+    logger.info(f"Output folder: {osp.join(args.output, config.exp_name)}")
+    config['output_folder'] = osp.join(args.output, config.exp_name)
+    os.makedirs(config['output_folder'], exist_ok=True)
+
+    logger.info(f"Input folder: {args.input}")
+    config['input_folder'] = args.input
+
+    return config
+
+def args_process():
+    parser = argparse.ArgumentParser(description="Process two input paths.")
+    parser.add_argument("--input", "-i", type=str, required=True, help="Path to the input directory or file")
+    parser.add_argument("--output", "-o", type=str, required=True, help="Path to the output directory or file")
+
+    args = parser.parse_args()
+
+    if not os.path.exists(args.input):
+        parser.error(f"Input path does not exist: {args.input}")
+
+    return args
+
+def create_dirs(config):
+    logger = logging.getLogger('INITIALIZE')
+    logger.info("Creating cache dirs")
     os.makedirs("plots", exist_ok=True)
     os.makedirs("cache", exist_ok=True)
     os.makedirs("cache/homogs", exist_ok=True)
     os.makedirs("cache/flows", exist_ok=True)
-
-
-def compose_configs(input_cfg):
-    if GlobalHydra.instance().is_initialized():
-        GlobalHydra.instance().clear()
-
-    logging.info("Loading required arguments")
-    with initialize(config_path='configs/presets/', version_base=None):
-        default_cfg = compose(config_name='default')
-        preset_cfg = compose(input_cfg.preset_name)
-
-    logging.info("Checking required arguments")
-
-    for req_args in list(default_cfg.app.required_args):
-        if req_args not in input_cfg.keys():
-            logging.error(f"Required argument {req_args} is not defined")
-            raise ValueError(f"Required argument {req_args} is missing")
-
-    logging.info("Composing configs")
-    # Merge them manually: later ones overwrite earlier ones
-    config = OmegaConf.merge(default_cfg, preset_cfg, input_cfg)
-
-    return config
-
-
+    logger.info("Cache dirs created")
 
 # Launch the application for stitching the image
-@hydra.main(version_base=None, config_path="configs", config_name="in_cave1")
-def main(config):
-    # TODO Change
-    # Configure logging
+def main():
+    # Parse args
+    args = args_process()
+    # Clear temp_init
+    with open(osp.join(args.output, "init_log.txt"), 'w'):
+        pass  # just open and close to truncate
+    # Temporary logger for init
     logging.basicConfig(
-        filename="app_log.txt",
         level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
+        format="%(asctime)s [%(name)s] [%(levelname)s] %(message)s",
+        handlers=[
+            logging.FileHandler(osp.join(args.output, "init_log.txt")),
+            logging.StreamHandler()],
+        force = True,
     )
+    # Make output dir
+    os.makedirs(args.output, exist_ok=True)
+    # Merge configs, allows for specification of hand-picked parameters
+    config = compose_configs(args)
+    # Create output dir for config and results
+    # Clear log file if exists
+    with open(osp.join(config['output_folder'], "output_log.txt"), 'w'):
+        pass  # just open and close to truncate
+    # Reconfigure configs
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(name)s] [%(levelname)s] %(message)s",
+        handlers=[
+            logging.FileHandler(osp.join(config['output_folder'], "output_log.txt")),
+            logging.StreamHandler()],
+        force = True,
+    )
+    shutil.copy(osp.join(args.output, "init_log.txt"), osp.join(config['output_folder'], "init_log.txt"))
+    # Load configs
     # Crete caching dirs
-    create_dirs()
-    # Merge configs, allows for specification of hand picked parameters
-    config = compose_configs(config)
-# Run main stitcher
+    create_dirs(config)
+    # Run main stitcher
     app = StitchApp(config)
     app.run()
 

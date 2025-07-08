@@ -1,15 +1,9 @@
-debug: False # To output global debug values
+debug: True # To output global debug values
 exp_name: name_not_specified # Used for saving partial outputs
 preset_name: default
 
-process_res: ??? # Processing resolution of image
-final_res: ???  # Final resolution of image
-input_folder: ??? # Path to the images
-output_folder: ??? #
-img_overview: ??? #
-
 app:
-  required_args: ['exp_name', 'input_folder', 'img_overview', 'output_folder', 'preset_name']
+  required_args: ['exp_name', 'input_folder', 'img_overview', 'output_folder']
 
 # Parameters regarding homography estimation
 homog:
@@ -24,7 +18,7 @@ homog:
   # Preload saved homographies
   load:
   save:
-  debug: False
+  debug: True
 
 # Parameters regarding optical flow estimation
 optical:
@@ -41,7 +35,7 @@ optical:
   # Load saved flows
   load: # Path to FOLDER with saved flows
   save: # Path to FOLDER where save homogs if empty no save
-  debug: False
+  debug: True
 
 light_optim:
   use_tile: False
@@ -58,3 +52,7 @@ stitcher:
   optim_steps: 50
   blend_width: 100
   flow_margin: 50
+
+hydra:
+  run:
+    chdir: false

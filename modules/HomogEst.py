@@ -2,10 +2,10 @@ from lightglue.utils import load_image, rbd
 import cv2 as cv
 import os
 from lightglue import viz2d
-from marek.homography_optimalizer import *
+from utils.homography_optimalizer import *
 from lightglue import LightGlue, SuperPoint
 import torch
-from memory_profiler import profile
+import logging
 
 def load_imgs(img_paths):
     # Load images in super point and light glue format
@@ -39,6 +39,7 @@ def _save_key_imgs(dat1, dat2, path="./plots/matches.jpg"):
 class HomogEstimator:
 
     def __init__(self, config):
+        self.logger = logging.getLogger("HOMOGRAPHY")
         self.config = config
         # Init feature extractor
         torch.set_grad_enabled(False)

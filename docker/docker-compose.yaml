@@ -1,0 +1,22 @@
+# ----------------------
+# docker-compose.oneshot.yml
+# ----------------------
+version: '3.8'
+
+services:
+  stitcher:
+    container_name: stitcher
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: stitcher:latest
+    volumes:
+      - /home/dejvax/PycharmProjects/SticherProd/data:/data  # !adjust!
+      - /home/dejvax/PycharmProjects/SticherProd/output:/output  # !adjust!
+    entrypoint: [ "/app/entrypoint_oneshot.sh" ]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    restart: no

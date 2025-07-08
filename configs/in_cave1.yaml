@@ -1,11 +1,12 @@
 # Required parameters
-########################################################################
-exp_name: cave_1          # Used for saving partial outputs
-input_folder: "imgs/cave1"  # Path to the images
-output_folder: "plots/"
-img_overview: 0.JPG       # Name of overview image contained in img folder
-preset_name: p_normal
-########################################################################
+
+exp_name: cave_1          # Used for saving partial outputs if not specified random string is generated
+input_folder: "imgs"      # Path to the images inside the input directory
+img_overview: 0.JPG       # Name of overview image contained in input folder
+preset_name: p_normal     # Preset to be used, if not specified p_normal is used
+
+# Optional override parameters. All preset parameters can be customized and override here
+# Check presets to see the structure of parameters
 
 light_optim:
   use_tile: True
