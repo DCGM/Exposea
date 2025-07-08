@@ -25,3 +25,5 @@ while true; do
             echo "Done: ${PROCESS_DIR}_done"
         fi
     done
+    sleep 5
+done

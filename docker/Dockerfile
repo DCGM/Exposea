@@ -19,7 +19,7 @@ COPY --from=git_stage /app/StitcherA/requirements.txt ./requirements.txt
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY --from=git_stage /app/StitcherA ./
-RUN echo "Contents of /app:" && ls -la /app
+
 COPY entrypoint-oneshot.sh /app/entrypoint-oneshot.sh
 COPY entrypoint-service.sh /app/entrypoint-service.sh
 RUN chmod +x /app/entrypoint-oneshot.sh /app/entrypoint-service.sh
