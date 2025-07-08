@@ -13,7 +13,7 @@ services:
     volumes:
       - /home/dejvax/PycharmProjects/SticherProd/data:/data  # !adjust!
       - /home/dejvax/PycharmProjects/SticherProd/output:/output  # !adjust!
-    entrypoint: [ "/app/entrypoint_oneshot.sh" ]
+    entrypoint: [ "/app/entrypoint-oneshot.sh" ]
     deploy:
       resources:
         reservations:
