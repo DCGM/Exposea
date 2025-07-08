@@ -20,3 +20,20 @@ services:
           devices:
             - capabilities: [gpu]
     restart: no
+
+  stitcher_service:
+    container_name: stitcher_service
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: stitcher:latest
+    volumes:
+      - /home/dejvax/PycharmProjects/SticherProd/data:/data  # !adjust!
+      - /home/dejvax/PycharmProjects/SticherProd/output:/output  # !adjust!
+    entrypoint: [ "/app/entrypoint-service.sh" ]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [ gpu ]
+    restart: no
