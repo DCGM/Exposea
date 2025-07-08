@@ -17,8 +17,6 @@ echo "Processing $SEL_FOLDER"
 echo "Saving to $OUTPUT_DIR"
 # Check if contains config file and img files
 
-python3 register.py \
---output $OUTPUT_DIR \
---input $SEL_FOLDERS
+python3 register.py --output $OUTPUT_DIR --input $SEL_FOLDER
 
 
