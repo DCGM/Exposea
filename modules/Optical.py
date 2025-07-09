@@ -95,7 +95,7 @@ class OpticalFlow:
         idx = 0
         # Progress bar
         patch_pbar = tqdm(total=len(patches), desc='Processing patches',
-                          position=1, leave=False, ncols=100, colour='red')
+                          position=1, leave=False, ncols=100, colour='red', file=sys.stdout)
         # TODO Rework to batches
         # Iterate over all patches
         for patch in patches:

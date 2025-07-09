@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import tqdm
 from torch import nn
 import logging
+import sys
 
 class SpatialLightParams(nn.Module):
     def __init__(self, grid_size=32, mode=['scale']):
@@ -176,7 +177,7 @@ def spatial_light_adjustment(fragment, reference, mask, config):
         optimizer = torch.optim.Adam(method.parameters(), lr=config.stitcher.lr)
 
         # Progress bar
-        pbar = tqdm.tqdm(total=config.stitcher.optim_steps, leave=False, ncols=100, colour='green')
+        pbar = tqdm.tqdm(total=config.stitcher.optim_steps, leave=False, ncols=100, colour='green', file=sys.stdout)
 
         for i in range(config.stitcher.optim_steps):
             optimizer.zero_grad()
@@ -199,7 +200,7 @@ def spatial_light_adjustment(fragment, reference, mask, config):
                                       tolerance_change=1e-12)
 
         # Progress bar
-        pbar = tqdm.tqdm(total=config.stitcher.optim_steps, leave=False, ncols=100, colour='green')
+        pbar = tqdm.tqdm(total=config.stitcher.optim_steps, leave=False, ncols=100, colour='green', file=sys.stdout)
         def closure():
             optimizer.zero_grad()
             # Upsample the correction map to full resolution

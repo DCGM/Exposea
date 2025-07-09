@@ -7,8 +7,8 @@ OUTPUT_DIR="/output"
 
 while true; do
   FOLDERS=("$INPUT_DIR"/*/)
-  echo $FOLDERS
-  for dir in $FOLDERS; do
+
+  for dir in ${FOLDERS[@]}; do
         [ -d "$dir" ] || continue
         base="$(basename "$dir")"
 
@@ -24,7 +24,9 @@ while true; do
 
             mv "${PROCESS_DIR}_processing" "${PROCESS_DIR}_done"
             echo "Done: ${PROCESS_DIR}_done"
+        else
+          echo " File $base is not eligible to process "
         fi
-    done
-    sleep 5
+  done
+  sleep 5
 done
