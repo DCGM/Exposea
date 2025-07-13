@@ -16,6 +16,7 @@ from modules.HomogEst import HomogEstimator
 from modules.Stitcher import Stitcher, ActualBlender, DebugBlender
 from modules.Optical import OpticalFlow
 from modules.LightEqual import *
+from utils.utils import scale_homog
 
 # For profile only
 from utils import timer
@@ -64,16 +65,13 @@ class StitchApp():
 
         self.run_timer.tic()
         # Make sure that the overview image is in compact resolution
-        self.resize_reference(self.config.final_res)
-        # TODO CHECK IMG TYPES ALLWAYS FLOATS
-        # TODO GLIMUR
-        # Memory rewrite
+        # self.resize_reference(self.config.final_res)
         # Estimate homographies
         self.logger.info("Estimating homographies")
         homographies = self.run_homog(resize=False)
 
         # Initialize progressive blender of fragments
-        homog_blender = DebugBlender(self.config.final_res, self.config)
+        homog_blender = DebugBlender( (6400, 8400), self.config)
 
         prog_blend = ActualBlender(self.config)
         stitch_progress = tqdm.tqdm(total=len(self.frag_paths), leave=True ,desc='Stitching images ', position=1, ncols=100, colour='blue')
@@ -85,16 +83,24 @@ class StitchApp():
 
             # Apply the homography
             self.logger.info(f"Warping {f_idx} with estimated homography")
-            warped_fragment, frag_mask = self.stitcher.warp_image(homog_frag, frag_path)
+            warped_fragment, frag_mask = self.stitcher.warp_image(homog_frag, frag_path, res=(6400, 8400))
 
             # Debug output
             if self.debug:
                 homog_blender.add_fragment(warped_fragment, frag_mask)
                 cv.imwrite(f"./plots/homog_{f_idx}.jpg", homog_blender.get_current_blend())
 
+            _, flow = self.run_flow(self.ref_path, warped_fragment, osp.basename(frag_path))
+
+            # Flow estimation in real size
+            # Resize all images to final res
+            homog_frag = scale_homog(homog_frag, 2.0)
+            warped_fragment, frag_mask = self.stitcher.warp_image(homog_frag, frag_path)
+            flow_fragment = self.optical.warp_image(warped_fragment, flow)
+
             # Warp fragment with optical flow
             self.logger.info(f"Estimating {f_idx} optical flow")
-            flow_fragment = self.run_flow(self.ref_path, warped_fragment, osp.basename(frag_path))
+
             # Memory clean
             torch.cuda.empty_cache()
 
@@ -103,7 +109,8 @@ class StitchApp():
                 cv.imwrite(f"./plots/flow_{f_idx}.jpg", flow_fragment)
 
             self.logger.info(f"Adjusting {f_idx} light")
-            light_adjusted = self.run_light_equal(self.ref_path, flow_fragment, frag_mask)
+            light_adjusted, _ = self.run_light_equal(self.ref_path, flow_fragment, frag_mask, resize=True)
+
 
             self.logger.info(f"Adding {f_idx} to final blend")
             prog_blend.add_fragment(light_adjusted, frag_mask, homog_frag, f_idx)
@@ -179,7 +186,7 @@ class StitchApp():
         else:
             return homographies
 
-    def run_flow(self, ref_path, warped_frag, frag_name):
+    def run_flow(self, ref_path, warped_frag, frag_name, resize=False):
         """
         Gets optical flow, either loaded or calculated
         Args:
@@ -213,13 +220,13 @@ class StitchApp():
             path = osp.join(self.config.optical.save, f'flow_{self.config.exp_name}_{frag_name}.npy')
             with open(path, "wb") as f:
                 np.save(f, flow)
-        flow_frag = self.optical.warp_image(warped_frag, flow)
+        # flow_frag = self.optical.warp_image(warped_frag, flow)
         self.flow_timer.toc()
-        return flow_frag
+       # return flow_frag, flow
+        return None, flow
 
 
-
-    def run_light_equal(self, ref_path, flow_fragment, frag_mask):
+    def run_light_equal(self, ref_path, flow_fragment, frag_mask, resize=False):
         """
         Runs the flow estimation
         Args:
@@ -231,14 +238,18 @@ class StitchApp():
         self.lo_timer.tic()
         # Equalize light
         ref_img = cv.imread(ref_path)
+        if resize:
+            ref_img = cv.resize(ref_img, [self.config.final_res[1], self.config.final_res[0]], cv.INTER_AREA)
         # Tile the image for memory consumption
         if self.config.light_optim.use_tile:
-            light_adjusted = tile_equalize_fragments(flow_fragment, frag_mask.copy(), ref_img, config=self.config)
+            light_adjusted, _ = tile_equalize_fragments(flow_fragment, frag_mask.copy(), ref_img, config=self.config)
+            self.lo_timer.toc()
+            return light_adjusted, None
         else:
-            light_adjusted = equalize_frag(flow_fragment, frag_mask.copy(), ref_img, config=self.config)
+            light_adjusted, m = equalize_frag(flow_fragment, frag_mask.copy(), ref_img, config=self.config)
+            self.lo_timer.toc()
+            return light_adjusted, m
 
-        self.lo_timer.toc()
-        return light_adjusted
 
 
     def resize_reference(self, size):
@@ -248,7 +259,8 @@ class StitchApp():
         """
         ref = cv.imread(self.ref_path)
         h, w = size
-        ref = cv.resize(ref, (w,h), interpolation=cv.INTER_CUBIC)
+        self.scale_factor = max(self.config.proc_res / h, self.config.proc_res / w)
+        ref = cv.resize(ref, ( w / self.scale_factor, h / self.scale_factor), interpolation=cv.INTER_AREA)
         self.ref_path = "cache/ref_resized.png"
         cv.imwrite(self.ref_path, ref)
 

@@ -1,6 +1,6 @@
 #from PIL.Image                         import open
 from torchvision.transforms.functional import to_tensor
-
+import numpy as np
 
 def read_image(path):
     """Returns a normalized image represented as [C, H, W] tensor."""
@@ -49,3 +49,10 @@ def make_line_between_axes(figure, src_axes, dst_axes):
             xyA = xy0, coordsA = src_transform,
             xyB = xy1, coordsB = dst_transform, color = color))
     return line_between_axes
+
+def scale_homog(h, scale):
+    D = np.array([[scale, 0, 0],
+                  [0, scale, 0],
+                  [0, 0, 1]])
+    h_scaled = D @ h
+    return h_scaled

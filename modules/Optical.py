@@ -11,7 +11,7 @@ import numpy as np
 from tqdm import tqdm
 from memory_profiler import profile
 import torch.profiler
-
+import sys
 class OpticalFlow:
 
     def __init__(self, config):
@@ -157,7 +157,8 @@ class OpticalFlow:
 
         # Subsample and blur the fragment for matching the resolutions
         if self.config.optical.adjust:
-            resized_imgs = self.adjust_images(cropped_ov, cropped_fr, self.config.optical.adjust_params)
+            pass
+           # resized_imgs = self.adjust_images(cropped_ov, cropped_fr, self.config.optical.adjust_params)
         else:
             resized_imgs = [cropped_ov, cropped_fr]
 
@@ -173,13 +174,23 @@ class OpticalFlow:
 
         stitched_flow = self.merge_flows(flow_patches, positions, resized_imgs[0].shape,
                                          self.config.optical.patch_overlap)
-        # If subsampled then upsample to original
-        if resized_imgs[0].shape != cropped_fr.shape:
-            stitched_flow = cv.resize(stitched_flow, (cropped_fr.shape[1], cropped_fr.shape[0]), interpolation=cv.INTER_LINEAR)
+        # # If subsampled then upsample to original
+        # if resized_imgs[0].shape != cropped_fr.shape:
+        #     stitched_flow = cv.resize(stitched_flow, (cropped_fr.shape[1], cropped_fr.shape[0]), interpolation=cv.INTER_LINEAR)
+        if hasattr(self.config.optical, 'adjust_params') and hasattr(self.config.optical.adjust_params, 'scale_factor'):
+            scale = self.config.optical.adjust_params.scale_factor
+            stitched_flow = cv.resize(stitched_flow, (stitched_flow.shape[1] * scale, stitched_flow.shape[0] * scale),
+                                      interpolation=cv.INTER_AREA)
+            o_y *= scale
+            o_x *= scale
+            o_h *= scale
+            o_w *= scale
+            ref_img = cv.resize(ref_img, (ref_img.shape[1] * scale, ref_img.shape[0] * scale),
+                                      interpolation=cv.INTER_LINEAR)
 
         flow_in_ov = np.zeros((ref_img.shape[0], ref_img.shape[1], 2))
         # Get the flow into dimension and position of overlap image
-        flow_in_ov[o_y:o_y + o_h, o_x:o_x + o_w] = stitched_flow
+        flow_in_ov[o_y:o_y + o_h, o_x:o_x + o_w] = stitched_flow[:o_h, :o_w]
 
         if self.config.debug:
             stitched_flow_img = self.np_flow_to_img(stitched_flow)
@@ -193,20 +204,20 @@ class OpticalFlow:
 
     def adjust_images(self, reference, fragment, config):
         # Step 2: Anti-aliasing Gaussian blur before resizing
-        sigma = config.gaus_blur_sigma # adjust based on scale
-        blurred_frag = cv.GaussianBlur(fragment, (5, 5), sigma)
-        if config.debug:
-            cv.imwrite(f"./plots/blurred_{self.debug_idx}.jpg", blurred_frag)
-            cv.imwrite(f"./plots/unblured_{self.debug_idx}.jpg", fragment)
+        # sigma = config.gaus_blur_sigma # adjust based on scale
+        # blurred_frag = cv.GaussianBlur(fragment, (5, 5), sigma)
+        # if config.debug:
+        #     cv.imwrite(f"./plots/blurred_{self.debug_idx}.jpg", blurred_frag)
+        #     cv.imwrite(f"./plots/unblured_{self.debug_idx}.jpg", fragment)
 
         if config.subsample_factor:
-            height, width = blurred_frag.shape[0],  blurred_frag.shape[1]
+            height, width = fragment.shape[0],  fragment.shape[1]
             scale = 1 / config.subsample_factor
             new_size = (int(width * scale), int(height * scale))
-            ds_frag = cv.resize(blurred_frag, new_size, interpolation=cv.INTER_AREA)
+            ds_frag = cv.resize(fragment, new_size, interpolation=cv.INTER_AREA)
             ds_ref = cv.resize(reference, new_size, interpolation=cv.INTER_AREA)
         else:
-            ds_frag = blurred_frag
+            ds_frag = fragment
             ds_ref = reference
 
         if config.debug:
