@@ -95,15 +95,15 @@ def tile_equalize_fragments(flow_fragment, mask, ref_img, config):
 
     adjusted_frags = []
     for f, r, m in zip(tile_frag, tile_ref, tile_mask):
-        adjusted = spatial_light_adjustment(f[1], r[1], m[1], config)
+        adjusted, _ = spatial_light_adjustment(f[1], r[1], m[1], config)
         adjusted_frags.append((f[0],adjusted))
 
     composed = compose_image(adjusted_frags, cut_frag.shape)
     frag_adj = np.zeros_like(flow_fragment, dtype=np.float32)
     frag_adj[y_min:y_max, x_min:x_max] = composed   # Rescale it back to 255
     frag_adj = np.asarray(frag_adj * 255.0, dtype=np.uint8)
-    cv.imwrite("../plots/composed.jpg", frag_adj)
-    return frag_adj
+    # cv.imwrite("../plots/composed.jpg", frag_adj)
+    return frag_adj, None
 
 
 def equalize_frag(flow_fragment, mask, ref_img, config):
@@ -122,13 +122,13 @@ def equalize_frag(flow_fragment, mask, ref_img, config):
         logging.info(f"Equalizing fragment size: {cut_frag.shape}")
 
     # Light optimization
-    frag_cut = spatial_light_adjustment(cut_frag, cut_ref, mask_cut, config)
+    frag_cut, m = spatial_light_adjustment(cut_frag, cut_ref, mask_cut, config)
     frag_adj = np.zeros_like(norm_frag)
     frag_adj[y_min:y_max, x_min:x_max] = frag_cut
     # Rescale it back to 255
     frag_adj = np.asarray(frag_adj * 255.0, dtype=np.uint8)
 
-    return frag_adj
+    return frag_adj, m
 
 
 def spatial_light_adjustment(fragment, reference, mask, config):
@@ -219,9 +219,9 @@ def spatial_light_adjustment(fragment, reference, mask, config):
     # Adjust the tensor back to cv img representation
     adjusted_frag = adjusted_frag.detach().clamp(0, 1).cpu()
     adjusted_frag = adjusted_frag[0].numpy().transpose((1, 2, 0))
-    del method, frag, ref
+    del frag, ref
     torch.cuda.empty_cache()
-    return adjusted_frag
+    return adjusted_frag, method
 
 
 def gauss_smooth_loss(predictions, target, params, lambda_smooth=1e-3):

@@ -1,1 +1,2 @@
-final_res: [ 20000, 20000 ]
+final_res: [ 12000, 16000 ]
+proc_res: 6000 # The biggest dimension will be max proc_res pixels

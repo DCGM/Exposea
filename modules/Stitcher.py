@@ -25,7 +25,7 @@ class Stitcher():
         self.config = config
         self.debug = debug
 
-    def warp_image(self, homography, frag_path):
+    def warp_image(self, homography, frag_path, res=None):
         """
         Warps image with homography.
         Args:
@@ -37,8 +37,12 @@ class Stitcher():
         """
 
         # Get the corner of the final image
+
         x_min, y_min = (0, 0)
-        x_max, y_max = (self.config.final_res[1], self.config.final_res[0])
+        if res is None:
+            x_max, y_max = (self.config.final_res[1], self.config.final_res[0])
+        else:
+            x_max, y_max = (res[1], res[0])
         # Compute translation homography to shift images to positive coordinates
         translation = np.array([[1, 0, -x_min], [0, 1, -y_min], [0, 0, 1]])
 
