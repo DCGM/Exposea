@@ -124,6 +124,7 @@ class StitchApp():
         self.logger.info(f"Time | Finished stitching {self.run_timer.toc(False)}")
 
     def save_in_jp2(self, i_path, o_pth):
+        self.logger.info(f"Saving {o_pth} using jp2 format")
         cmd = [
             'opj_compress',
             '-i', i_path,
@@ -141,8 +142,9 @@ class StitchApp():
         try:
             subprocess.run(cmd, check=True)
         except subprocess.CalledProcessError as e:
-            print(f"Error: opj_compress failed with exit code {e.returncode}")
+            self.logger.error(f"Error: opj_compress failed with exit code {e.returncode}")
             raise
+
 
     def run_homog(self, resize=False):
         """

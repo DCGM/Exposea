@@ -1,9 +1,9 @@
-debug: False # To output global debug values
+debug: True # To output global debug values
 exp_name: name_not_specified # Used for saving partial outputs
 preset_name: default
 
 app:
-  required_args: ['exp_name', 'input_folder', 'img_overview', 'output_folder']
+  required_args: ['exp_name','img_overview']
 
 # Parameters regarding homography estimation
 homog:
@@ -18,7 +18,7 @@ homog:
   # Preload saved homographies
   load:
   save:
-  debug: False
+  debug: True
 
 # Parameters regarding optical flow estimation
 optical:
@@ -35,7 +35,7 @@ optical:
   # Load saved flows
   load: # Path to FOLDER with saved flows
   save: # Path to FOLDER where save homogs if empty no save
-  debug: False
+  debug: True
 
 light_optim:
   use_tile: False
