@@ -12,7 +12,7 @@ while true; do
         [ -d "$dir" ] || continue
         base="$(basename "$dir")"
 
-        if [[ "$base" != *_processing && "$base" != *_done ]]; then
+        if [[ "$base" != *_processing && "$base" != *_done && "$base" != *_incomplete ]]; then
             echo "Found: $base at $dir"
 
             PROCESS_DIR="$INPUT_DIR/$base"

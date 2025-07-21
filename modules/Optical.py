@@ -12,9 +12,13 @@ from tqdm import tqdm
 from memory_profiler import profile
 import torch.profiler
 import sys
+
+
+
 class OpticalFlow:
 
     def __init__(self, config):
+        self.logger = logging.getLogger("OPTICAL FLOW")
         self.config = config
         self.model = ptlflow.get_model(config.optical.model, config.optical.checkpoint)
         self.model.training = False
@@ -98,11 +102,14 @@ class OpticalFlow:
                           position=1, leave=False, ncols=100, colour='red', file=sys.stdout)
         # TODO Rework to batches
         # Iterate over all patches
+        self.logger.info(f'Estimating flow on {len(patches)} patches')
         for patch in patches:
             idx += 1
             # We reshape so that the estimation is from fragment to overview
             reshaped_patch = (patch[0], patch[1])
             # Check if both images have same shape
+            if patch[0].shape[:2] != patch[1].shape[:2]:
+                self.logger.error(f"Patch shape missmatch {patch[0].shape[:2]} != {patch[1].shape[:2]}")
             assert patch[0].shape[:2] == patch[1].shape[:2]
             # Find mask of patch optical flow on black background
             _, bin_mask_p = cv.threshold(cv.cvtColor(patch[0], cv.COLOR_BGR2GRAY), 1, 255, cv.THRESH_BINARY)
@@ -127,25 +134,17 @@ class OpticalFlow:
         return flow_patches
 
     def estimate_flow(self, ref_img, frag_img, debug_idx=0):
-        # with torch.profiler.profile(
-        #         activities=[torch.profiler.ProfilerActivity.CUDA],
-        #         profile_memory=True,
-        #         with_stack=True
-        # ) as prof:
+
         # Get the overlapping region  for optical flow estimation
         overlap1, overlap2 = self.get_overlap_region(ref_img, frag_img)
         assert overlap1.shape == overlap2.shape
 
         _, bin_mask_ov = cv.threshold(cv.cvtColor(overlap1, cv.COLOR_BGR2GRAY), 1, 255, cv.THRESH_BINARY)
-        # _, bin_mask_fr = cv.threshold(cv.cvtColor(overlap2, cv.COLOR_BGR2GRAY), 1, 255, cv.THRESH_BINARY)
 
         coords_ov = cv.findNonZero(bin_mask_ov)
-        # coords_fr = cv.findNonZero(bin_mask_fr)
 
         o_x, o_y, o_w, o_h = cv.boundingRect(coords_ov)
         cropped_ov = overlap1[o_y:o_y + o_h, o_x:o_x + o_w]
-        # f_x, f_y, f_w, f_h = cv.boundingRect(coords_fr)
-        # cropped_fr = overlap2[f_y:f_y + f_h, f_x:f_x + f_w]
         cropped_fr = overlap2[o_y:o_y + o_h, o_x:o_x + o_w]
 
         if self.config.optical.debug:
@@ -157,8 +156,7 @@ class OpticalFlow:
 
         # Subsample and blur the fragment for matching the resolutions
         if self.config.optical.adjust:
-            pass
-           # resized_imgs = self.adjust_images(cropped_ov, cropped_fr, self.config.optical.adjust_params)
+            resized_imgs = self.adjust_images(cropped_ov, cropped_fr, self.config)
         else:
             resized_imgs = [cropped_ov, cropped_fr]
 
@@ -203,19 +201,15 @@ class OpticalFlow:
 
 
     def adjust_images(self, reference, fragment, config):
-        # Step 2: Anti-aliasing Gaussian blur before resizing
-        # sigma = config.gaus_blur_sigma # adjust based on scale
-        # blurred_frag = cv.GaussianBlur(fragment, (5, 5), sigma)
-        # if config.debug:
-        #     cv.imwrite(f"./plots/blurred_{self.debug_idx}.jpg", blurred_frag)
-        #     cv.imwrite(f"./plots/unblured_{self.debug_idx}.jpg", fragment)
 
-        if config.subsample_factor:
+        if hasattr(config, 'relative_scale'):
             height, width = fragment.shape[0],  fragment.shape[1]
-            scale = 1 / config.subsample_factor
+            scale = 1 / config.relative_scale
             new_size = (int(width * scale), int(height * scale))
             ds_frag = cv.resize(fragment, new_size, interpolation=cv.INTER_AREA)
-            ds_ref = cv.resize(reference, new_size, interpolation=cv.INTER_AREA)
+            ds_frag = cv.GaussianBlur(ds_frag, (3, 3), sigmaX=0.5)
+            ds_frag = cv.resize(ds_frag, (width, height), interpolation=cv.INTER_CUBIC)
+            ds_ref = reference
         else:
             ds_frag = fragment
             ds_ref = reference
@@ -237,81 +231,140 @@ class OpticalFlow:
 
         return coords_fr, coords_ov
 
-
     def split_image_with_overlap(self, images, patch_size, overlap):
-
         image_a, image_b = images
         h, w, c = image_a.shape
         ph, pw = patch_size
         oh, ow = overlap
 
-        ph -= 2 * oh
-        pw -= 2 * ow
+        core_ph = ph - 2 * oh
+        core_pw = pw - 2 * ow
 
         patches = []
         positions = []
-        # TODO Cases when image is the exac
-        for y in range(0, h , ph ):
-            for x in range(0, w , pw):
 
-                if y + ph > h:
-                    oversize_h = (y + ph) - h
-                    y = y - oversize_h
+        for y in range(0, h, core_ph):
+            for x in range(0, w, core_pw):
+                y0 = max(y - oh, 0)
+                x0 = max(x - ow, 0)
+                y1 = min(y + core_ph + oh, h)
+                x1 = min(x + core_pw + ow, w)
 
-                if x + pw > w:
-                    oversize_w = (x + pw) - w
-                    x = x - oversize_w
-
-                patch_a = image_a[max(0, y - oh) : y + min(ph + oh, h), max(0, x - ow):x + min(pw + ow, w)]
-                patch_b = image_b[max(0, y - oh) : y + min(ph + oh, h), max(0, x - ow):x + min(pw + ow, w)]
+                patch_a = image_a[y0:y1, x0:x1]
+                patch_b = image_b[y0:y1, x0:x1]
 
                 patches.append((patch_a, patch_b))
                 positions.append((y, x))
 
         return patches, positions
+    # def split_image_with_overlap(self, images, patch_size, overlap):
+    #
+    #     image_a, image_b = images
+    #     h, w, c = image_a.shape
+    #     ph, pw = patch_size
+    #     oh, ow = overlap
+    #
+    #     ph -= 2 * oh
+    #     pw -= 2 * ow
+    #
+    #     patches = []
+    #     positions = []
+    #     # TODO Cases when image is the exac
+    #     for y in range(0, h , ph ):
+    #         for x in range(0, w , pw):
+    #
+    #             if y + ph > h:
+    #                 oversize_h = (y + ph) - h
+    #                 y = y - oversize_h
+    #
+    #             if x + pw > w:
+    #                 oversize_w = (x + pw) - w
+    #                 x = x - oversize_w
+    #
+    #             patch_a = image_a[max(0, y - oh) : y + min(ph + oh, h), max(0, x - ow):x + min(pw + ow, w)]
+    #             patch_b = image_b[max(0, y - oh) : y + min(ph + oh, h), max(0, x - ow):x + min(pw + ow, w)]
+    #
+    #             patches.append((patch_a, patch_b))
+    #             positions.append((y, x))
+    #
+    #     return patches, positions
 
 
+    # def merge_flows(self, flows, positions, original_shape, overlap):
+    #     """
+    #     Merges individual patches to the original image
+    #     Args:
+    #         flows: list of flow patches
+    #         positions: relative positions of patches
+    #         original_shape: original image shape
+    #         overlap: overlap size of patches
+    #
+    #     Returns:
+    #         returns the merged fragment
+    #     """
+    #     # unpack some values
+    #     img_h, img_w, _ = original_shape
+    #     oh, ow = overlap
+    #     p_h, p_w = self.config.optical.input_size
+    #
+    #     p_h -= 2 * oh
+    #     p_w -= 2 * ow
+    #
+    #     merged_flow = np.zeros((img_h, img_w, 2), dtype=np.float32)
+    #     merged_acc = np.zeros((img_h, img_w, 2), dtype=np.float32) + 1e-5
+    #     for idx, (patch, (y, x)) in enumerate(zip(flows, positions)):
+    #
+    #         cut_y = min(y + p_h, img_h)
+    #         cut_x = min(x + p_w, img_w)
+    #
+    #         if y == 0:
+    #             patch = patch[:p_h + oh, :]
+    #         else:
+    #             patch = patch[oh:p_h + oh, :]
+    #
+    #         if x == 0:
+    #             patch = patch[:, :p_w + ow]
+    #         else:
+    #             patch = patch[:, ow:p_w + ow]
+    #
+    #         ph, pw = patch.shape[:2]
+    #
+    #
+    #         merged_flow[y:y + ph, x:x + pw] += patch
+    #         merged_acc[y:cut_y, x:cut_x] += [1, 1]
+    #
+    #     normalized_flow = merged_flow / merged_acc
+    #
+    #     return normalized_flow
     def merge_flows(self, flows, positions, original_shape, overlap):
-        """
-        Merges individual patches to the original image
-        Args:
-            flows: list of flow patches
-            positions: relative positions of patches
-            original_shape: original image shape
-            overlap: overlap size of patches
-
-        Returns:
-            returns the merged fragment
-        """
-        # unpack some values
         img_h, img_w, _ = original_shape
         oh, ow = overlap
         p_h, p_w = self.config.optical.input_size
 
-        p_h -= 2 * oh
-        p_w -= 2 * ow
+        core_ph = p_h - 2 * oh
+        core_pw = p_w - 2 * ow
 
         merged_flow = np.zeros((img_h, img_w, 2), dtype=np.float32)
         merged_acc = np.zeros((img_h, img_w, 2), dtype=np.float32) + 1e-5
+
         for idx, (patch, (y, x)) in enumerate(zip(flows, positions)):
-
-            cut_y = min(y + p_h, img_h)
-            cut_x = min(x + p_w, img_w)
-
+            # Remove overlap from patch
             if y == 0:
-                cut_y += oh
+                patch = patch[:core_ph + oh, :]
             else:
-                patch = patch[oh: p_h + oh, :]
+                patch = patch[oh:core_ph + oh, :]
+
             if x == 0:
-                cut_x += ow
+                patch = patch[:, :core_pw + ow]
             else:
-                patch = patch[:, ow :p_w + ow]
+                patch = patch[:, ow:core_pw + ow]
 
-            merged_flow[y:cut_y, x:cut_x] += patch[:,:]
-            merged_acc[y:cut_y, x:cut_x] += [1, 1]
-        # TODO Possible problem here :)
+            ph, pw = patch.shape[:2]
+
+            merged_flow[y:y + ph, x:x + pw] += patch
+            merged_acc[y:y + ph, x:x + pw] += 1
+
         normalized_flow = merged_flow / merged_acc
-
         return normalized_flow
 
 

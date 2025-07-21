@@ -2,14 +2,19 @@ debug: True # To output global debug values
 exp_name: name_not_specified # Used for saving partial outputs
 preset_name: default
 
+# Default values
+proc_res: 6000
+relative_scale: 10
+
+# Required params
 app:
-  required_args: ['exp_name','img_overview']
+  required_args: ['exp_name','img_overview', 'final_res']
 
 # Parameters regarding homography estimation
 homog:
   type: default
   feature_extractor: SuperPoint # Method to extract features
-  max_feat_points: 4096 # Maximum feature points to find
+  max_feat_points: 16192 # Maximum feature points to find
   feature_matcher: LightGlue # Method to match features
   do_optimization: False # Turn optimization on
   max_matches: 200 # Max points to match
@@ -38,18 +43,19 @@ optical:
   debug: True
 
 light_optim:
+  grid_size: 32
   use_tile: False
   tile_size: [2000,2000]
+  loss_type: "mse"
+  lr: 0.1
+  steps: 50
+  mode: [ "scale" ]
+  optimizer: "LBFGS" # "adam" # LBFGS
+
 
 # Parameters regarding stitching
 stitcher:
   mode: actual
-  grid_size: 32
-  optim_mode: ["scale"]
-  optimizer: "LBFGS" # "adam" # LBFGS
-  loss_type: "mse"
-  lr: 0.1
-  optim_steps: 50
   blend_width: 100
   flow_margin: 50
 

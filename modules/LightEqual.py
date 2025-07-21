@@ -13,7 +13,6 @@ class SpatialLightParams(nn.Module):
         self.grid_H, self.grid_W = grid_size, grid_size
         self.mode = list(mode)
 
-
         mode = list(mode)
         if "scale" in mode:
             self.alpha_map = nn.Parameter(torch.ones((1, 1, self.grid_H, self.grid_W)))
@@ -77,6 +76,7 @@ def compose_image(fragments, full_shape):
     return result
 
 def tile_equalize_fragments(flow_fragment, mask, ref_img, config):
+    logger = logging.getLogger("LIGHT OPTIM")
     # Get reference image and normalize it
     ref_norm = ref_img.astype(np.float32) / 255.0
     # Normalize fragment
@@ -107,6 +107,7 @@ def tile_equalize_fragments(flow_fragment, mask, ref_img, config):
 
 
 def equalize_frag(flow_fragment, mask, ref_img, config):
+    logger = logging.getLogger("LIGHT OPTIM")
     # Get reference image and normalize it
     ref_norm = ref_img.astype(np.float32) / 255.0
     # Normalize fragment
@@ -119,7 +120,7 @@ def equalize_frag(flow_fragment, mask, ref_img, config):
     mask_cut = mask[y_min:y_max, x_min:x_max]
 
     if config.debug:
-        logging.info(f"Equalizing fragment size: {cut_frag.shape}")
+        logger.info(f"Equalizing fragment size: {cut_frag.shape}")
 
     # Light optimization
     frag_cut, m = spatial_light_adjustment(cut_frag, cut_ref, mask_cut, config)
@@ -143,13 +144,13 @@ def spatial_light_adjustment(fragment, reference, mask, config):
        :return
            adjusted: CV Image with adjusted lighting correction.
        """
-
+    logger = logging.getLogger("LIGHT OPTIM")
     device = torch.cuda.current_device()
 
-    method = SpatialLightParams(grid_size=config.stitcher.grid_size, mode=config.stitcher.optim_mode)
+    method = SpatialLightParams(grid_size=config.light_optim.grid_size, mode=config.light_optim.mode)
     method.to(device)
 
-    loss = config.stitcher.loss_type
+    loss = config.light_optim.loss_type
     if loss == "mse":
         loss_fn = torch.nn.MSELoss()
     elif loss == "l1":
@@ -166,20 +167,20 @@ def spatial_light_adjustment(fragment, reference, mask, config):
     ref, frag = reshape_to_lbfgs(reference, fragment, device)
     # Reshapes the mask so the loss calculation is easier
     mask_reshaped = torch.from_numpy(mask.transpose((2, 0, 1))).float().unsqueeze(0).to(device)
-
+    final_loss = 0
     with torch.no_grad():
         loss = loss_fn(method.interpolate(frag).masked_select(mask_reshaped>0), ref.masked_select(mask_reshaped>0))
-        logging.info(f"Initial loss: {loss.item():.4f}")
+        #logger.info(f"Initial loss: {loss.item():.4f}")
         del loss
 
-    if config.stitcher.optimizer == 'adam':
+    if config.light_optim.optimizer == 'adam':
         # Initialize the optimizer
-        optimizer = torch.optim.Adam(method.parameters(), lr=config.stitcher.lr)
+        optimizer = torch.optim.Adam(method.parameters(), lr=config.light_optim.lr)
 
         # Progress bar
-        pbar = tqdm.tqdm(total=config.stitcher.optim_steps, leave=False, ncols=100, colour='green', file=sys.stdout)
+        pbar = tqdm.tqdm(total=config.light_optim.steps, leave=False, ncols=100, colour='green', file=sys.stdout)
 
-        for i in range(config.stitcher.optim_steps):
+        for i in range(config.light_optim.steps):
             optimizer.zero_grad()
             # Upsample the correction map to full resolution
             adjusted_fragment = method.interpolate(frag)
@@ -188,19 +189,19 @@ def spatial_light_adjustment(fragment, reference, mask, config):
             optimizer.step()
             pbar.set_description(f"Loss: {loss.item():.4f}")
             pbar.update(1)
+        final_loss = loss.item()
 
-
-    if config.stitcher.optimizer == "LBFGS":
+    if config.light_optim.optimizer == "LBFGS":
         # Initialize the optimizer
         optimizer = torch.optim.LBFGS(method.parameters(),
-                                      lr=config.stitcher.lr,
-                                      max_iter=config.stitcher.optim_steps,
+                                      lr=config.light_optim.lr,
+                                      max_iter=config.light_optim.steps,
                                       line_search_fn="strong_wolfe",
                                       tolerance_grad= 1e-12,
                                       tolerance_change=1e-12)
 
         # Progress bar
-        pbar = tqdm.tqdm(total=config.stitcher.optim_steps, leave=False, ncols=100, colour='green', file=sys.stdout)
+        pbar = tqdm.tqdm(total=config.light_optim.steps, leave=False, ncols=100, colour='green', file=sys.stdout)
         def closure():
             optimizer.zero_grad()
             # Upsample the correction map to full resolution
@@ -212,7 +213,9 @@ def spatial_light_adjustment(fragment, reference, mask, config):
             return loss
 
         optimizer.step(closure)
+        final_loss = closure()
 
+    logger.info(f"Final loss: {final_loss:.4f}")
     # Return final interpolated image
     adjusted_frag = method.interpolate(frag)
 

@@ -7,6 +7,8 @@ import subprocess
 
 import pprint
 import pickle
+
+import cv2
 import torch.cuda
 import datetime
 
@@ -64,26 +66,32 @@ class StitchApp():
             self.logger.info("Torch cuda %s", torch.cuda.is_available())
 
         self.run_timer.tic()
-        # Make sure that the overview image is in compact resolution
-        # self.resize_reference(self.config.final_res)
+        # Calculate the final scaling factor and process resolution of images
+        self.calc_process_params()
+
         # Estimate homographies
-        self.logger.info("Estimating homographies")
+        self.logger.info(f"Estimating homographies for {len(self.frag_paths)} images")
         homographies = self.run_homog(resize=False)
 
         # Initialize progressive blender of fragments
-        homog_blender = DebugBlender( (6400, 8400), self.config)
+        homog_blender = DebugBlender(self.process_HW, self.config)
 
+        self.logger.info("Start of sequential image stitching")
         prog_blend = ActualBlender(self.config)
         stitch_progress = tqdm.tqdm(total=len(self.frag_paths), leave=True ,desc='Stitching images ', position=1, ncols=100, colour='blue')
         for f_idx, frag_path in enumerate(self.frag_paths):
+
+            # Processing in process resolution
+            #######################################
+
             torch.cuda.reset_peak_memory_stats()
             self.debug_idx = f_idx
             # Apply homography
             homog_frag = homographies[f_idx]
 
             # Apply the homography
-            self.logger.info(f"Warping {f_idx} with estimated homography")
-            warped_fragment, frag_mask = self.stitcher.warp_image(homog_frag, frag_path, res=(6400, 8400))
+            self.logger.info(f"[{f_idx}]    Warping with estimated homography")
+            warped_fragment, frag_mask = self.stitcher.warp_image(homog_frag, frag_path, res=self.process_HW)
 
             # Debug output
             if self.debug:
@@ -92,14 +100,18 @@ class StitchApp():
 
             _, flow = self.run_flow(self.ref_path, warped_fragment, osp.basename(frag_path))
 
-            # Flow estimation in real size
-            # Resize all images to final res
-            homog_frag = scale_homog(homog_frag, 2.0)
+            # Processing in final resolution
+            #######################################
+
+            homog_frag = scale_homog(homog_frag, self.final_scale)
+            flow *= self.final_scale
+            flow = cv.resize(flow, (self.config.final_res[1],self.config.final_res[0]), cv.INTER_LINEAR)
             warped_fragment, frag_mask = self.stitcher.warp_image(homog_frag, frag_path)
             flow_fragment = self.optical.warp_image(warped_fragment, flow)
+            del flow, warped_fragment
 
             # Warp fragment with optical flow
-            self.logger.info(f"Estimating {f_idx} optical flow")
+            self.logger.info(f"[{f_idx}]    Estimating optical flow")
 
             # Memory clean
             torch.cuda.empty_cache()
@@ -108,15 +120,15 @@ class StitchApp():
             if self.debug:
                 cv.imwrite(f"./plots/flow_{f_idx}.jpg", flow_fragment)
 
-            self.logger.info(f"Adjusting {f_idx} light")
+            self.logger.info(f"[{f_idx}]    Adjusting light")
             light_adjusted, _ = self.run_light_equal(self.ref_path, flow_fragment, frag_mask, resize=True)
+            del flow_fragment
 
-
-            self.logger.info(f"Adding {f_idx} to final blend")
+            self.logger.info(f"[{f_idx}]    Adding to final blend")
             prog_blend.add_fragment(light_adjusted, frag_mask, homog_frag, f_idx)
 
-            peak = torch.cuda.max_memory_allocated()
-            self.logger.info(f"Peak usage: {peak / 1024 ** 2:.2f} MB")
+            #peak = torch.cuda.max_memory_allocated()
+            #self.logger.info(f"Peak usage: {peak / 1024 ** 2:.2f} MB")
 
             # Memory clean
             torch.cuda.empty_cache()
@@ -126,9 +138,9 @@ class StitchApp():
         cv.imwrite(osp.join(self.out_dir, "final_stitch.png"), final_img)
         self.save_in_jp2(osp.join(self.out_dir, "final_stitch.png"), osp.join(self.out_dir, "final_stitch.jp2"))
 
-        self.logger.info(f"Time | Optical flow {self.flow_timer.average_time}")
-        self.logger.info(f"Time | Light optim {self.lo_timer.average_time}")
-        self.logger.info(f"Time | Finished stitching {self.run_timer.toc(False)}")
+        self.logger.info(f"Average Time | Optical flow {self.flow_timer.average_time}")
+        self.logger.info(f"Average Time | Light optim {self.lo_timer.average_time}")
+        self.logger.info(f"Average Time | Finished stitching {self.run_timer.toc(False)}")
 
     def save_in_jp2(self, i_path, o_pth):
         self.logger.info(f"Saving {o_pth} using jp2 format")
@@ -152,6 +164,24 @@ class StitchApp():
             self.logger.error(f"Error: opj_compress failed with exit code {e.returncode}")
             raise
 
+    def calc_process_params(self):
+
+        target_h, target_w = self.config.final_res
+        target_aspect = target_w / target_h
+
+        if target_aspect >= 1.0:
+            # Wider than tall
+            process_w = self.config.proc_res
+            process_h = int(round(process_w / target_aspect))
+        else:
+            # Taller than wide
+            process_h = self.config.proc_res
+            process_w = int(round(process_h * target_aspect))
+
+        self.final_scale = target_h / process_h
+        self.process_HW = (process_h, process_w)
+        self.resize_reference(self.process_HW)
+        self.logger.info(f"Process Height, Width {self.process_HW} | Final Scale {self.final_scale}")
 
     def run_homog(self, resize=False):
         """
@@ -166,7 +196,9 @@ class StitchApp():
                 homographies = pickle.load(f)
         else:
             # The img paths is sent to load the images in correct format for feature extraction and matching
-            homographies, _ = self.homog_estimator.register(self.ref_path, self.frag_paths)
+            homographies, _ , to_del = self.homog_estimator.register(self.ref_path, self.frag_paths)
+           # self.frag_paths = [val for idx, val in enumerate(self.frag_paths) if idx not in to_del]
+
             if self.config.homog.save:
                 os.makedirs(self.config.homog.save, exist_ok=True)
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -261,8 +293,7 @@ class StitchApp():
         """
         ref = cv.imread(self.ref_path)
         h, w = size
-        self.scale_factor = max(self.config.proc_res / h, self.config.proc_res / w)
-        ref = cv.resize(ref, ( w / self.scale_factor, h / self.scale_factor), interpolation=cv.INTER_AREA)
+        ref = cv.resize(ref, ( w, h), interpolation=cv.INTER_AREA)
         self.ref_path = "cache/ref_resized.png"
         cv.imwrite(self.ref_path, ref)
 
@@ -270,10 +301,10 @@ class StitchApp():
     def load_image_paths(self, sort):
 
         img_names = os.listdir(self.img_dir)
-        overview_name = str(self.config.img_overview)
+        ref_name = str(self.config.ref_name)
         # Get overview image and save it separately for visualization
-        if overview_name in img_names:
-            ref_path = os.path.join(self.img_dir, overview_name)
+        if ref_name in img_names:
+            ref_path = os.path.join(self.img_dir, ref_name)
         else:
             raise ValueError("Overview image not found")
         if sort:
@@ -283,7 +314,7 @@ class StitchApp():
         # for visualization and homography
         frag_path = []
         for name in img_names:
-            if name != overview_name:
+            if name != ref_name:
                 img_p = os.path.join(self.img_dir, name)
                 frag_path.append(img_p)
         return ref_path, frag_path

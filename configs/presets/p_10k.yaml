@@ -1,0 +1,8 @@
+# Preset for images with final resolution of around 20kx20k
+
+final_res: [ 6400, 8400 ]
+proc_res: 6000  # Resize the images so they fit into memory
+
+light_optim:
+  use_tile: True
+  tile_size: [2000, 2000] # Can be adjusted to fit the memory

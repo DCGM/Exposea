@@ -3,7 +3,7 @@ import numpy as np
 
 # Load the image
 NAME = '0.JPG'
-image = cv2.imread(f'imgs/example5/{NAME}')
+image = cv2.imread(f'/home/dejvax/PycharmProjects/SticherProd/data/phone1/images/0.jpg')
 if image is None:
     raise ValueError("Image not found or unable to load.")
 
@@ -114,7 +114,7 @@ def clip_rect_img(img):
     # Apply the perspective transformation
     warped_img = cv2.warpPerspective(image, M, (width, height))
 
-    cv2.imwrite(f"plots/crop_rect/{NAME}", warped_img)
+    cv2.imwrite(f"../plots/crop_rect/{NAME}", warped_img)
 
 
 
