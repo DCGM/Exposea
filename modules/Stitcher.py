@@ -47,7 +47,7 @@ class Stitcher():
         translation = np.array([[1, 0, -x_min], [0, 1, -y_min], [0, 0, 1]])
 
         # Load fragment
-        fragment = cv.imread(frag_path)
+        fragment = cv.imread(frag_path).astype(np.float32)
         masking_array = np.ones_like(fragment, np.uint8)
         # Calculate the homography
         H = translation @ homography
@@ -128,13 +128,14 @@ class DebugBlender:
 
         acum_mask = weights > 0
         self.img[acum_mask] = self.img[acum_mask] / weights[acum_mask]
+        self.mask = acum_mask[:, :, 0]
 
     def get_current_blend(self):
         return self.img.astype(np.uint8)
 
 
 class ActualBlender:
-    def __init__(self, config):
+    def __init__(self, config, ref_img):
         res = (int(config.final_res[0]), int(config.final_res[1]))
 
         self.config = config
@@ -144,7 +145,9 @@ class ActualBlender:
                                            2 * (self.blend_width + config.stitcher.flow_margin) + 1), np.uint8)
 
         # Progressive blend image values are accumulated here
-        self.progress_blend_img = np.zeros((res[0], res[1], 3), dtype=np.float32)
+        res_ref = cv.resize(ref_img, (res[1], res[0]), interpolation=cv.INTER_AREA)
+        self.progress_blend_img = np.array(res_ref, dtype=np.float32)
+        del res_ref
         # Mask of progressive stitch
         self.progress_blend_mask = np.zeros(res, dtype=bool)
         # Accumulator for closest value to 1 this represent the best pixel so far
@@ -162,7 +165,7 @@ class ActualBlender:
 
         # Compute dense jacobian denterminants
         det = self.compute_jacobian_determinant(homography, fragment[y_min:y_max, x_min:x_max].shape[:2])
-        res_array = np.zeros(fragment.shape[:2])
+        res_array = np.zeros(fragment.shape[:2], dtype=np.float32)
         res_array[y_min:y_max, x_min:x_max] = det
 
         # Stack previous best values and current
@@ -186,17 +189,15 @@ class ActualBlender:
         #prog_mask_eroded = cv.erode(self.progress_blend_mask.astype(np.uint8), self.erode_kernel, iterations=1).astype(bool)
         frag_weight = 1 - self.calc_border_dist(np.where(self.best_idx_acum == key, 1, 0), k=self.blend_width)[:, :, 0]
         prog_weight = 1 - self.calc_border_dist(np.where(cond, 0, 1), k=self.blend_width)[:, :, 0]
-        #reverse_erosion = cv.dilate((frag_best_pixels_mask & shrunk_mask[:,:,0]).astype(np.uint8), self.erode_kernel, iterations=1)
-        #frag_weight = self.calc_border_dist(reverse_erosion, k=self.blend_width, type=cv.THRESH_BINARY)[:, :, 0]
 
         if self.config.debug:
             cv.imwrite(f"plots/frag_weights_{key}.jpg", (frag_weight * 255).astype(np.uint8))
-            cv.imwrite(f"plots/prog_weight_{key}.jpg", (prog_weight * 255).astype(np.uint8))
+            cv.imwrite(f"plots/prog_weight_{key}.jpg", ((1 - frag_weight) * 255).astype(np.uint8))
 
 
         # Given images and weights stitch them together
         self.progress_blend_img = self.blend_weighted([self.progress_blend_img, fragment],
-                                                      [prog_weight, frag_weight])
+                                                      [1 - frag_weight, frag_weight])
 
         if self.config.debug:
             cv.imwrite(f"plots/prog_stitch_{key}.jpg", self.progress_blend_img.astype(np.uint8))

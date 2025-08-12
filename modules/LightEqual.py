@@ -100,8 +100,9 @@ def tile_equalize_fragments(flow_fragment, mask, ref_img, config):
 
     composed = compose_image(adjusted_frags, cut_frag.shape)
     frag_adj = np.zeros_like(flow_fragment, dtype=np.float32)
-    frag_adj[y_min:y_max, x_min:x_max] = composed   # Rescale it back to 255
-    frag_adj = np.asarray(frag_adj * 255.0, dtype=np.uint8)
+    frag_adj[y_min:y_max, x_min:x_max] = composed
+    # Rescale it back to 255
+    frag_adj = frag_adj * 255.0
     # cv.imwrite("../plots/composed.jpg", frag_adj)
     return frag_adj, None
 
@@ -127,7 +128,7 @@ def equalize_frag(flow_fragment, mask, ref_img, config):
     frag_adj = np.zeros_like(norm_frag)
     frag_adj[y_min:y_max, x_min:x_max] = frag_cut
     # Rescale it back to 255
-    frag_adj = np.asarray(frag_adj * 255.0, dtype=np.uint8)
+    frag_adj = np.asarray(frag_adj * 255.0, dtype=np.float32)
 
     return frag_adj, m
 
@@ -200,20 +201,23 @@ def spatial_light_adjustment(fragment, reference, mask, config):
                                       tolerance_grad= 1e-12,
                                       tolerance_change=1e-12)
 
+        final_loss = [None]
         # Progress bar
         pbar = tqdm.tqdm(total=config.light_optim.steps, leave=False, ncols=100, colour='green', file=sys.stdout)
+
         def closure():
             optimizer.zero_grad()
             # Upsample the correction map to full resolution
             adjusted_fragment = method.interpolate(frag)
             loss = loss_fn(adjusted_fragment.masked_select(mask_reshaped>0), ref.masked_select(mask_reshaped>0))
+            final_loss[0] = loss.item()
             loss.backward()
             pbar.set_description(f"Loss: {loss.item():.4f}")
             pbar.update(1)
             return loss
 
         optimizer.step(closure)
-        final_loss = closure()
+        final_loss = final_loss[0]
 
     logger.info(f"Final loss: {final_loss:.4f}")
     # Return final interpolated image

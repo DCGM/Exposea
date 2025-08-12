@@ -11,8 +11,8 @@ services:
       dockerfile: Dockerfile
     image: stitcher:latest
     volumes:
-      - /home/dejvax/PycharmProjects/SticherProd/data:/data  # !adjust!
-      - /home/dejvax/PycharmProjects/SticherProd/output:/output  # !adjust!
+      - ../test_data:/data  # !adjust!
+      - ../output:/output  # !adjust!
     entrypoint: [ "/app/entrypoint-oneshot.sh" ]
     deploy:
       resources:
@@ -28,8 +28,8 @@ services:
       dockerfile: Dockerfile
     image: stitcher:latest
     volumes:
-      - /home/dejvax/PycharmProjects/SticherProd/data:/data  # !adjust!
-      - /home/dejvax/PycharmProjects/SticherProd/output:/output  # !adjust!
+      - ../test_data:/data  # !adjust!
+      - ../output:/output  # !adjust!
     entrypoint: [ "/app/entrypoint-service.sh" ]
     deploy:
       resources:

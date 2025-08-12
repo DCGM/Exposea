@@ -114,7 +114,6 @@ class HomogEstimator:
         h, w = fragment.shape[1:]
 
         fragment = fragment.unsqueeze(0)
-
         frag_low = torch.nn.functional.interpolate(fragment, scale_factor=scale, mode='bilinear', align_corners=False, antialias=True)
         fragment = torch.nn.functional.interpolate(frag_low, size=(h,w), mode='bilinear', align_corners=False, antialias=True)
         return fragment.squeeze(0)
@@ -137,7 +136,16 @@ class HomogEstimator:
             frag_img = load_img(frag_path)
 
             if hasattr(self.config, "relative_scale"):
-                frag_img = self.adjust_fragment(frag_img, 1 / self.config.relative_scale)
+                try:
+                    frag_img = self.adjust_fragment(frag_img, 1 / self.config.relative_scale)
+                except:
+                    self.logger.error("Invalid value in relative scale")
+
+            elif hasattr(self.config, "frag_ref_dpi"):
+                try:
+                    frag_img = self.adjust_fragment(frag_img, 1 / (self.config.frag_ref_dpi[0] / self.config.frag_ref_dpi[1]))
+                except:
+                    self.logger.error("Invalid value in frag_ref_dpi")
 
             # For debug output
             if self.config.homog.debug:
@@ -151,29 +159,11 @@ class HomogEstimator:
             H, m, mkpts = self.get_homography(feats_ref, feats_frag, matches_a_b, (0, idx))
 
             if H is None:
-                # randrot = v2.RandomRotation(5)
-                # frag_img = randrot(load_img(frag_path))
-                #
-                # if hasattr(self.config, "relative_scale"):
-                #     frag_img = self.adjust_fragment(frag_img, 1 / self.config.relative_scale)
-                #
-                # # For debug output
-                # if self.config.homog.debug:
-                #     self.images = (ref_img, frag_img)
-                #
-                # feats_frag = self.extractor.extract(frag_img.to(self.device))
-                # # Find matches between images
-                # matches_a_b = self.matcher({"image0": feats_ref, "image1": feats_frag})
-                # # Ger homography from image b to a
-                # H, m, mkpts = self.get_homography(feats_ref, feats_frag, matches_a_b, (0, idx))
                 to_del.append(idx)
                 continue
 
-
             homographies.append(H)
             corrs.append(mkpts)
-
-
 
         return homographies, corrs, to_del
 
@@ -195,7 +185,6 @@ class HomogEstimator:
             _save_key_imgs([self.images[0], m_kpts1, kpts1],
                             [self.images[1], m_kpts2, kpts2],
                             path=f"./plots/kpts_{pair[0]}_{pair[1]}.jpeg")
-
 
         if len(np.asarray(m_kpts2.cpu())) < 20 or len(np.asarray(m_kpts1.cpu())) < 20:
             print("Not enough points")

@@ -245,6 +245,13 @@ class OpticalFlow:
 
         for y in range(0, h, core_ph):
             for x in range(0, w, core_pw):
+                # Take care of patch exiting image boundaries
+                if y + core_ph >= h:
+                    y = h - core_ph
+                if x + core_pw >= w:
+                    x = w - core_pw
+
+                # Take care of patch with overlap exiting image boundaries
                 y0 = max(y - oh, 0)
                 x0 = max(x - ow, 0)
                 y1 = min(y + core_ph + oh, h)
@@ -348,14 +355,18 @@ class OpticalFlow:
         merged_acc = np.zeros((img_h, img_w, 2), dtype=np.float32) + 1e-5
 
         for idx, (patch, (y, x)) in enumerate(zip(flows, positions)):
-            # Remove overlap from patch
+            # Patch overlap outside of image do not include it
             if y == 0:
                 patch = patch[:core_ph + oh, :]
+            elif y + core_ph + oh >= img_h:
+                patch = patch[oh:core_ph, :]
             else:
                 patch = patch[oh:core_ph + oh, :]
 
             if x == 0:
                 patch = patch[:, :core_pw + ow]
+            elif x + core_pw + ow >= img_w:
+                patch = patch[:, ow:core_pw]
             else:
                 patch = patch[:, ow:core_pw + ow]
 
@@ -368,7 +379,7 @@ class OpticalFlow:
         return normalized_flow
 
 
-    def warp_image(self, image, flow):
+    def warp_mask(self, image, flow):
         """
         Applies optical flow to image
         Args:
@@ -389,7 +400,48 @@ class OpticalFlow:
 
         # Warp image using remap
         warped = cv.remap(copy.copy(image), x_new.astype(np.float32), y_new.astype(np.float32),
-                          interpolation=cv.INTER_CUBIC)
+                          interpolation=cv.INTER_NEAREST, borderMode=cv.BORDER_REPLICATE)
+        return warped
+
+    def warp_image_tiled(self, image, flow, tile_size=2000):
+        h, w = flow.shape[:2]
+        warped = np.zeros_like(image)
+
+        for i in range(0, h, tile_size):
+            for j in range(0, w, tile_size):
+                i_end = min(i + tile_size, h)
+                j_end = min(j + tile_size, w)
+
+                y_tile, x_tile = np.meshgrid(np.arange(i, i_end), np.arange(j, j_end), indexing='ij')
+
+                flow_tile = flow[i:i_end, j:j_end]
+
+                x_new_tile = np.clip(x_tile + flow_tile[..., 0], 0, w - 1).astype(np.float32)
+                y_new_tile = np.clip(y_tile + flow_tile[..., 1], 0, h - 1).astype(np.float32)
+
+                warped_tile = cv.remap(image, x_new_tile, y_new_tile,
+                                       interpolation=cv.INTER_CUBIC,
+                                       borderMode=cv.BORDER_REPLICATE)
+
+                warped[i:i_end, j:j_end] = warped_tile
+
+        return warped
+
+
+    def warp_image(self, image, flow):
+
+        h, w = flow.shape[:2]
+
+        # Create mesh grid of pixel indices
+        y, x = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
+
+        # Compute new pixel positions
+        x_new = np.clip(x + flow[..., 0], 0, w - 1)
+        y_new = np.clip(y + flow[..., 1], 0, h - 1)
+
+        # Warp image using remap
+        warped = cv.remap(copy.copy(image), x_new.astype(np.float32), y_new.astype(np.float32),
+                          interpolation=cv.INTER_CUBIC, borderMode=cv.BORDER_REPLICATE)
         return warped
 
     def get_overlap_region(self, img1, img2_warped):
