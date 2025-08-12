@@ -427,6 +427,57 @@ class OpticalFlow:
 
         return warped
 
+    def warp_image_tiled(self, image, flow, tile_size=1000):
+        h, w = flow.shape[:2]
+        warped = np.zeros_like(image)
+
+        for i in range(0, h, tile_size):
+            for j in range(0, w, tile_size):
+                i_end = min(i + tile_size, h)
+                j_end = min(j + tile_size, w)
+
+                # Create meshgrid for this tile (relative coords)
+                y_tile, x_tile = np.meshgrid(
+                    np.arange(i, i_end), np.arange(j, j_end), indexing='ij'
+                )
+
+                # Extract flow for the tile
+                flow_tile = flow[i:i_end, j:j_end]
+
+                # Compute *absolute* target coordinates
+                x_new_abs = np.clip(x_tile + flow_tile[..., 0], 0, w - 1)
+                y_new_abs = np.clip(y_tile + flow_tile[..., 1], 0, h - 1)
+
+                # Figure out bounding box in the source image we actually need
+                x_min = int(np.floor(x_new_abs.min()))
+                x_max = int(np.ceil(x_new_abs.max())) + 1
+                y_min = int(np.floor(y_new_abs.min()))
+                y_max = int(np.ceil(y_new_abs.max())) + 1
+
+                # Clip to image bounds
+                x_min = max(0, x_min)
+                y_min = max(0, y_min)
+                x_max = min(w, x_max)
+                y_max = min(h, y_max)
+
+                # Extract only the needed part of the source image
+                src_crop = image[y_min:y_max, x_min:x_max]
+
+                # Adjust mapping coordinates to the cropped source tile
+                x_new_rel = (x_new_abs - x_min).astype(np.float32)
+                y_new_rel = (y_new_abs - y_min).astype(np.float32)
+
+                # Remap just the cropped tile
+                warped_tile = cv.remap(
+                    src_crop, x_new_rel, y_new_rel,
+                    interpolation=cv.INTER_CUBIC,
+                    borderMode=cv.BORDER_REPLICATE
+                )
+
+                # Place result into output image
+                warped[i:i_end, j:j_end] = warped_tile
+
+        return warped
 
     def warp_image(self, image, flow):
 

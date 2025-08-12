@@ -16,14 +16,14 @@ Supported version of Python >= 3.10 and <= 3.12
 
 Clone the repository
  ```bash
-   git clone git@github.com:DCGM/Exposea.git
-   cd Exposea
+  git clone git@github.com:DCGM/Exposea.git
+  cd Exposea
  ```  
 Instalation is supported through pip and as a docker image
 #### For Pip
 Install requirements
 ```bash 
-   pip install -r requirements.txt
+  pip install -r requirements.txt
 ```
 
 #### For Docker
@@ -34,8 +34,8 @@ Start by modifying paths to input and output directories in docker compose
 
 Afterwards you can build the docker as
 ```bash
-cd docker
-docker compose -f docker-compose.yaml build
+  cd docker
+  docker compose -f docker-compose.yaml build
 ```
 ### Run
 
@@ -45,14 +45,14 @@ or start continuous mode, which keeps running and monitoring for new tasks.
 
 **One-shot**
 ```bash
-docker compose up stitcher
+  docker compose up stitcher
 ```
 **Continuous service**
 ```bash
-docker compose up stitcher_service
+  docker compose up stitcher_service
 ```
 #### Python script
 To run simple example as python script
 ```bash
-python python register.py  -i ./path/to/task -o ./path/to/output/
+  python python register.py  -i ./path/to/task -o ./path/to/output/
 ```
