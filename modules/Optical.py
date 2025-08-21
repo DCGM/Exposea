@@ -264,85 +264,7 @@ class OpticalFlow:
                 positions.append((y, x))
 
         return patches, positions
-    # def split_image_with_overlap(self, images, patch_size, overlap):
-    #
-    #     image_a, image_b = images
-    #     h, w, c = image_a.shape
-    #     ph, pw = patch_size
-    #     oh, ow = overlap
-    #
-    #     ph -= 2 * oh
-    #     pw -= 2 * ow
-    #
-    #     patches = []
-    #     positions = []
-    #     # TODO Cases when image is the exac
-    #     for y in range(0, h , ph ):
-    #         for x in range(0, w , pw):
-    #
-    #             if y + ph > h:
-    #                 oversize_h = (y + ph) - h
-    #                 y = y - oversize_h
-    #
-    #             if x + pw > w:
-    #                 oversize_w = (x + pw) - w
-    #                 x = x - oversize_w
-    #
-    #             patch_a = image_a[max(0, y - oh) : y + min(ph + oh, h), max(0, x - ow):x + min(pw + ow, w)]
-    #             patch_b = image_b[max(0, y - oh) : y + min(ph + oh, h), max(0, x - ow):x + min(pw + ow, w)]
-    #
-    #             patches.append((patch_a, patch_b))
-    #             positions.append((y, x))
-    #
-    #     return patches, positions
 
-
-    # def merge_flows(self, flows, positions, original_shape, overlap):
-    #     """
-    #     Merges individual patches to the original image
-    #     Args:
-    #         flows: list of flow patches
-    #         positions: relative positions of patches
-    #         original_shape: original image shape
-    #         overlap: overlap size of patches
-    #
-    #     Returns:
-    #         returns the merged fragment
-    #     """
-    #     # unpack some values
-    #     img_h, img_w, _ = original_shape
-    #     oh, ow = overlap
-    #     p_h, p_w = self.config.optical.input_size
-    #
-    #     p_h -= 2 * oh
-    #     p_w -= 2 * ow
-    #
-    #     merged_flow = np.zeros((img_h, img_w, 2), dtype=np.float32)
-    #     merged_acc = np.zeros((img_h, img_w, 2), dtype=np.float32) + 1e-5
-    #     for idx, (patch, (y, x)) in enumerate(zip(flows, positions)):
-    #
-    #         cut_y = min(y + p_h, img_h)
-    #         cut_x = min(x + p_w, img_w)
-    #
-    #         if y == 0:
-    #             patch = patch[:p_h + oh, :]
-    #         else:
-    #             patch = patch[oh:p_h + oh, :]
-    #
-    #         if x == 0:
-    #             patch = patch[:, :p_w + ow]
-    #         else:
-    #             patch = patch[:, ow:p_w + ow]
-    #
-    #         ph, pw = patch.shape[:2]
-    #
-    #
-    #         merged_flow[y:y + ph, x:x + pw] += patch
-    #         merged_acc[y:cut_y, x:cut_x] += [1, 1]
-    #
-    #     normalized_flow = merged_flow / merged_acc
-    #
-    #     return normalized_flow
     def merge_flows(self, flows, positions, original_shape, overlap):
         img_h, img_w, _ = original_shape
         oh, ow = overlap
@@ -403,81 +325,109 @@ class OpticalFlow:
                           interpolation=cv.INTER_NEAREST, borderMode=cv.BORDER_REPLICATE)
         return warped
 
-    def warp_image_tiled(self, image, flow, tile_size=2000):
-        h, w = flow.shape[:2]
-        warped = np.zeros_like(image)
 
-        for i in range(0, h, tile_size):
-            for j in range(0, w, tile_size):
-                i_end = min(i + tile_size, h)
-                j_end = min(j + tile_size, w)
 
-                y_tile, x_tile = np.meshgrid(np.arange(i, i_end), np.arange(j, j_end), indexing='ij')
+    def warp_image_tiled(self,image, flow, tile=4096,
+                   interpolation="linear",
+                   border_mode="replicate",
+                   border_value=0,
+                   dtype_out=None):
+        """
+        Memory-efficient tiled backward warping of an image using optical flow.
 
-                flow_tile = flow[i:i_end, j:j_end]
+        Parameters
+        ----------
+        image : np.ndarray
+            Input image of shape (H, W) or (H, W, C).
+        flow : np.ndarray
+            Backward optical flow of shape (H, W, 2). flow[...,0] = u (x offset), flow[...,1] = v (y offset).
+        tile : int
+            Tile size for processing. Keeps memory bounded.
+        interpolation : {"nearest","linear"}
+            Interpolation method.
+        border_mode : {"reflect","replicate","constant"}
+            Border handling.
+        border_value : scalar
+            Used if border_mode="constant".
+        dtype_out : np.dtype or None
+            Output dtype. If None, keep same as input.
+        """
+        H, W = flow.shape[:2]
+        if image.ndim == 2:
+            C = 1
+            image = image[..., None]
+        else:
+            C = image.shape[2]
+        if dtype_out is None:
+            dtype_out = image.dtype
 
-                x_new_tile = np.clip(x_tile + flow_tile[..., 0], 0, w - 1).astype(np.float32)
-                y_new_tile = np.clip(y_tile + flow_tile[..., 1], 0, h - 1).astype(np.float32)
+        interp_map = {"nearest": cv.INTER_NEAREST, "linear": cv.INTER_LINEAR}
+        border_map = {
+            "reflect": cv.BORDER_REFLECT_101,
+            "replicate": cv.BORDER_REPLICATE,
+            "constant": cv.BORDER_CONSTANT,
+        }
+        interp_flag = interp_map[interpolation]
+        border_flag = border_map[border_mode]
 
-                warped_tile = cv.remap(image, x_new_tile, y_new_tile,
-                                       interpolation=cv.INTER_CUBIC,
-                                       borderMode=cv.BORDER_REPLICATE)
+        # Preallocate full output
+        out = np.empty((H, W, C), dtype_out)
 
-                warped[i:i_end, j:j_end] = warped_tile
+        for y0 in range(0, H, tile):
+            y1 = min(H, y0 + tile)
+            for x0 in range(0, W, tile):
+                x1 = min(W, x0 + tile)
 
-        return warped
+                h = y1 - y0
+                w = x1 - x0
 
-    def warp_image_tiled(self, image, flow, tile_size=1000):
-        h, w = flow.shape[:2]
-        warped = np.zeros_like(image)
+                # Preallocate local buffers
+                mapx = np.empty((h, w), dtype=dtype_out)
+                mapy = np.empty((h, w), dtype=dtype_out)
 
-        for i in range(0, h, tile_size):
-            for j in range(0, w, tile_size):
-                i_end = min(i + tile_size, h)
-                j_end = min(j + tile_size, w)
-
-                # Create meshgrid for this tile (relative coords)
-                y_tile, x_tile = np.meshgrid(
-                    np.arange(i, i_end), np.arange(j, j_end), indexing='ij'
+                # Base grid
+                grid_x, grid_y = np.meshgrid(
+                    np.arange(x0, x1, dtype=dtype_out),
+                    np.arange(y0, y1, dtype=dtype_out)
                 )
 
-                # Extract flow for the tile
-                flow_tile = flow[i:i_end, j:j_end]
+                # Fill maps
+                mapx[...] = grid_x + flow[y0:y1, x0:x1, 0].astype(dtype_out)
+                mapy[...] = grid_y + flow[y0:y1, x0:x1, 1].astype(dtype_out)
 
-                # Compute *absolute* target coordinates
-                x_new_abs = np.clip(x_tile + flow_tile[..., 0], 0, w - 1)
-                y_new_abs = np.clip(y_tile + flow_tile[..., 1], 0, h - 1)
+                # Sanitize NaN/inf
+                bad = ~np.isfinite(mapx) | ~np.isfinite(mapy)
+                if np.any(bad):
+                    mapx[bad] = -1
+                    mapy[bad] = -1
 
-                # Figure out bounding box in the source image we actually need
-                x_min = int(np.floor(x_new_abs.min()))
-                x_max = int(np.ceil(x_new_abs.max())) + 1
-                y_min = int(np.floor(y_new_abs.min()))
-                y_max = int(np.ceil(y_new_abs.max())) + 1
+                # Preallocate warped tile buffer
+                warped_tile = np.empty((h, w, C), dtype=dtype_out)
 
-                # Clip to image bounds
-                x_min = max(0, x_min)
-                y_min = max(0, y_min)
-                x_max = min(w, x_max)
-                y_max = min(h, y_max)
-
-                # Extract only the needed part of the source image
-                src_crop = image[y_min:y_max, x_min:x_max]
-
-                # Adjust mapping coordinates to the cropped source tile
-                x_new_rel = (x_new_abs - x_min).astype(np.float32)
-                y_new_rel = (y_new_abs - y_min).astype(np.float32)
-
-                # Remap just the cropped tile
+                # compute needed source crop
+                min_x = max(0, int(np.floor(mapx.min())) - 1)
+                max_x = min(W, int(np.ceil(mapx.max())) + 1)
+                min_y = max(0, int(np.floor(mapy.min())) - 1)
+                max_y = min(H, int(np.ceil(mapy.max())) + 1)
+                # slice source
+                src_crop = image[min_y:max_y, min_x:max_x, :]
+                # adjust maps into local crop coords
+                mapx_local = (mapx - min_x).astype(dtype_out)
+                mapy_local = (mapy - min_y).astype(dtype_out)
+                # Warp each channel into tile buffer, then copy into output
                 warped_tile = cv.remap(
-                    src_crop, x_new_rel, y_new_rel,
-                    interpolation=cv.INTER_CUBIC,
-                    borderMode=cv.BORDER_REPLICATE
-                )
+                    src_crop,
+                    mapx_local, mapy_local,
+                    interpolation=interp_flag,
+                    borderMode=border_flag,
+                    borderValue=border_value
+                ).astype(dtype_out, copy=False)
 
-                # Place result into output image
-                warped[i:i_end, j:j_end] = warped_tile
+                out[y0:y1, x0:x1, :] = warped_tile
 
-        return warped
+        if C == 1:
+            out = out[..., 0]
+        return out
 
     def warp_image(self, image, flow):
 

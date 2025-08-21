@@ -4,12 +4,12 @@
 version: '3.8'
 
 services:
-  stitcher:
-    container_name: stitcher
+  exposea:
+    container_name: exposea
     build:
       context: .
       dockerfile: Dockerfile
-    image: stitcher:latest
+    image: exposea:latest
     volumes:
       - ../test_data:/data  # !adjust!
       - ../output:/output  # !adjust!
@@ -21,12 +21,12 @@ services:
             - capabilities: [gpu]
     restart: no
 
-  stitcher_service:
-    container_name: stitcher_service
+  exposea_service:
+    container_name: exposea_service
     build:
       context: .
       dockerfile: Dockerfile
-    image: stitcher:latest
+    image: exposea:latest
     volumes:
       - ../test_data:/data  # !adjust!
       - ../output:/output  # !adjust!

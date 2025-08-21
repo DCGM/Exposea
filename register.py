@@ -121,8 +121,13 @@ class StitchApp():
                 cv.imwrite(f"./plots/warped_{f_idx}.jpg", warped_fragment)
 
             flow_fragment = self.optical.warp_image(warped_fragment, flow)
+            del warped_fragment
+            gc.collect()
+
+            print("Mask")
             frag_mask = np.astype(self.optical.warp_mask(np.astype(frag_mask, np.float32), flow), bool)
-            del flow, warped_fragment
+            del flow
+            gc.collect()
 
             # Warp fragment with optical flow
             self.logger.info(f"[{f_idx}]    Estimating optical flow")
@@ -146,7 +151,7 @@ class StitchApp():
                 self.logger.info(f"Peak usage: {peak / 1024 ** 2:.2f} MB")
 
             # Memory clean
-            if f_idx % 4 == 0:
+            if f_idx % 1 == 0:
                 torch.cuda.empty_cache()
                 gc.collect()
 
@@ -169,6 +174,7 @@ class StitchApp():
             cv.imwrite(osp.join(self.out_dir, "final_stitch.png"), img)
             save_name = f"final_stitch.{self.config.save_format}"
             self.save_in_jp2(osp.join(self.out_dir, "final_stitch.png"), osp.join(self.out_dir, save_name))
+        # TODO Save with dedicated lib TIFFFILE
         elif hasattr(self.config, 'save_format') and  self.config.save_format in ['tiff', 'tif']:
             save_name = f"final_stitch.{self.config.save_format}"
             cv.imwrite(osp.join(self.out_dir, save_name), img)

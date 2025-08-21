@@ -5,7 +5,7 @@ FROM node:18 as git_stage
 WORKDIR /app
 RUN apt-get update && apt-get install -y git && apt-get purge -y --auto-remove  && rm -rf /var/lib/apt/lists/*
 ARG RELEASE_TAG="v0.0.2"
-RUN git clone --single-branch https://github.com/ikarus1211/StitcherA.git
+RUN git clone --single-branch git@github.com:DCGM/Exposea.git
  
 ####################################################################################333
 
