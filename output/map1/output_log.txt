@@ -1,0 +1,161 @@
+2025-08-12 13:38:10,348 [INITIALIZE] [INFO] Loading input config from ../data/example1/config.yaml
+2025-08-12 13:38:10,350 [INITIALIZE] [INFO] Loading default config from configs/presets/default.yaml
+2025-08-12 13:38:10,353 [INITIALIZE] [INFO] Loading preset p_10k
+2025-08-12 13:38:10,355 [INITIALIZE] [INFO] Merging input cfg
+2025-08-12 13:38:10,357 [INITIALIZE] [INFO] Config:
+{'debug': True, 'exp_name': 'map1', 'preset_name': 'p_10k', 'proc_res': 6000, 'relative_scale': 10, 'app': {'required_args': ['exp_name', 'img_overview', 'final_res']}, 'homog': {'type': 'default', 'feature_extractor': 'SuperPoint', 'max_feat_points': 16192, 'feature_matcher': 'LightGlue', 'do_optimization': False, 'max_matches': 200, 'optimizer': 'marek', 'load': None, 'save': None, 'debug': True}, 'optical': {'model': 'memflow_t', 'checkpoint': 'sintel', 'input_size': [540, 960], 'patch_overlap': [40, 40], 'adjust': False, 'adjust_params': {'debug': False, 'gaus_blur_sigma': 1.0, 'subsample_factor': 2}, 'load': None, 'save': None, 'debug': True}, 'light_optim': {'grid_size': 32, 'use_tile': True, 'tile_size': [2000, 2000], 'loss_type': 'mse', 'lr': 0.1, 'steps': 50, 'mode': ['scale'], 'optimizer': 'LBFGS'}, 'stitcher': {'mode': 'actual', 'blend_width': 100, 'flow_margin': 50}, 'hydra': {'run': {'chdir': False}}, 'final_res': [10000, 10000], 'img_folder': 'imgs/', 'ref_name': '0.JPG', 'save_format': 'jp2', 'corner_coords': [[40, 40], [0, 6399], [8399, 0], [8360, 6399]]}
+2025-08-12 13:38:10,357 [INITIALIZE] [INFO] Output folder: ../output/map1
+2025-08-12 13:38:10,357 [INITIALIZE] [INFO] Input folder: ../data/example1/
+2025-08-12 13:38:10,357 [INITIALIZE] [INFO] Creating cache dirs
+2025-08-12 13:38:10,357 [INITIALIZE] [INFO] Cache dirs created
+2025-08-12 13:38:10,357 [STITCHER] [INFO] Initializing STITCHER
+2025-08-12 13:38:10,358 [STITCHER] [INFO] Config:
+{'debug': True, 'exp_name': 'map1', 'preset_name': 'p_10k', 'proc_res': 6000, 'relative_scale': 10, 'app': {'required_args': ['exp_name', 'img_overview', 'final_res']}, 'homog': {'type': 'default', 'feature_extractor': 'SuperPoint', 'max_feat_points': 16192, 'feature_matcher': 'LightGlue', 'do_optimization': False, 'max_matches': 200, 'optimizer': 'marek', 'load': None, 'save': None, 'debug': True}, 'optical': {'model': 'memflow_t', 'checkpoint': 'sintel', 'input_size': [540, 960], 'patch_overlap': [40, 40], 'adjust': False, 'adjust_params': {'debug': False, 'gaus_blur_sigma': 1.0, 'subsample_factor': 2}, 'load': None, 'save': None, 'debug': True}, 'light_optim': {'grid_size': 32, 'use_tile': True, 'tile_size': [2000, 2000], 'loss_type': 'mse', 'lr': 0.1, 'steps': 50, 'mode': ['scale'], 'optimizer': 'LBFGS'}, 'stitcher': {'mode': 'actual', 'blend_width': 100, 'flow_margin': 50}, 'hydra': {'run': {'chdir': False}}, 'final_res': [10000, 10000], 'img_folder': 'imgs/', 'ref_name': '0.JPG', 'save_format': 'jp2', 'corner_coords': [[40, 40], [0, 6399], [8399, 0], [8360, 6399]], 'output_folder': '../output/map1', 'input_folder': '../data/example1/'}
+2025-08-12 13:38:11,134 [timm.models._builder] [INFO] Loading pretrained weights from Hugging Face hub (timm/twins_svt_large.in1k)
+2025-08-12 13:38:11,302 [timm.models._hub] [INFO] [timm/twins_svt_large.in1k] Safe alternative available for 'pytorch_model.bin' (as 'model.safetensors'). Loading weights using safetensors.
+2025-08-12 13:38:11,943 [timm.models._builder] [INFO] Loading pretrained weights from Hugging Face hub (timm/twins_svt_large.in1k)
+2025-08-12 13:38:12,058 [timm.models._hub] [INFO] [timm/twins_svt_large.in1k] Safe alternative available for 'pytorch_model.bin' (as 'model.safetensors'). Loading weights using safetensors.
+2025-08-12 13:38:12,199 [STITCHER] [INFO] Torch cuda True
+2025-08-12 13:38:16,467 [STITCHER] [INFO] Process Height, Width (6000, 6000) | Final Scale 1.6666666666666667
+2025-08-12 13:38:16,467 [STITCHER] [INFO] Estimating homographies for 10 images
+2025-08-12 13:38:16,467 [HOMOG] [INFO] Loading reference from ./cache/ref_resized.png
+2025-08-12 13:38:17,491 [HOMOG] [INFO] REF Num. Features: 8654
+2025-08-12 13:38:17,491 [HOMOG] [INFO] [0] Loading fragment from ../data/example1/images/1.JPG
+2025-08-12 13:38:17,904 [HOMOG] [INFO] [0] Num. Features: 1349 | Matches 1167
+2025-08-12 13:38:25,993 [HOMOG] [INFO] [1] Loading fragment from ../data/example1/images/5.JPG
+2025-08-12 13:38:26,388 [HOMOG] [INFO] [1] Num. Features: 866 | Matches 748
+2025-08-12 13:38:34,103 [HOMOG] [INFO] [2] Loading fragment from ../data/example1/images/7.JPG
+2025-08-12 13:38:34,492 [HOMOG] [INFO] [2] Num. Features: 1691 | Matches 696
+2025-08-12 13:38:42,260 [HOMOG] [INFO] [3] Loading fragment from ../data/example1/images/4.JPG
+2025-08-12 13:38:42,666 [HOMOG] [INFO] [3] Num. Features: 1329 | Matches 1187
+2025-08-12 13:38:50,650 [HOMOG] [INFO] [4] Loading fragment from ../data/example1/images/6.JPG
+2025-08-12 13:38:51,057 [HOMOG] [INFO] [4] Num. Features: 1102 | Matches 944
+2025-08-12 13:38:59,157 [HOMOG] [INFO] [5] Loading fragment from ../data/example1/images/2.JPG
+2025-08-12 13:38:59,560 [HOMOG] [INFO] [5] Num. Features: 1522 | Matches 1328
+2025-08-12 13:39:07,889 [HOMOG] [INFO] [6] Loading fragment from ../data/example1/images/9.JPG
+2025-08-12 13:39:08,298 [HOMOG] [INFO] [6] Num. Features: 1102 | Matches 944
+2025-08-12 13:39:16,359 [HOMOG] [INFO] [7] Loading fragment from ../data/example1/images/3.JPG
+2025-08-12 13:39:16,772 [HOMOG] [INFO] [7] Num. Features: 1025 | Matches 876
+2025-08-12 13:39:24,441 [HOMOG] [INFO] [8] Loading fragment from ../data/example1/images/10.JPG
+2025-08-12 13:39:24,821 [HOMOG] [INFO] [8] Num. Features: 1691 | Matches 696
+2025-08-12 13:39:32,432 [HOMOG] [INFO] [9] Loading fragment from ../data/example1/images/8.JPG
+2025-08-12 13:39:32,814 [HOMOG] [INFO] [9] Num. Features: 866 | Matches 748
+2025-08-12 13:39:40,352 [STITCHER] [INFO] Start of sequential image stitching
+2025-08-12 13:39:42,013 [STITCHER] [INFO] [0]    Warping with estimated homography
+2025-08-12 13:39:43,926 [OPTICAL FLOW] [INFO] Estimating flow on 54 patches
+2025-08-12 13:40:01,100 [STITCHER] [INFO] [0]  Scaling flow by 1.6666666666666667
+2025-08-12 13:40:05,986 [STITCHER] [INFO] [0]    Estimating optical flow
+2025-08-12 13:40:06,248 [STITCHER] [INFO] [0] Adjusting light
+2025-08-12 13:40:10,123 [LIGHT OPTIM] [INFO] Final loss: 0.0024
+2025-08-12 13:40:11,276 [LIGHT OPTIM] [INFO] Final loss: 0.0027
+2025-08-12 13:40:12,417 [LIGHT OPTIM] [INFO] Final loss: 0.0021
+2025-08-12 13:40:13,248 [LIGHT OPTIM] [INFO] Final loss: 0.0016
+2025-08-12 13:40:14,320 [LIGHT OPTIM] [INFO] Final loss: 0.0021
+2025-08-12 13:40:15,040 [LIGHT OPTIM] [INFO] Final loss: 0.0026
+2025-08-12 13:40:15,799 [LIGHT OPTIM] [INFO] Final loss: 0.0022
+2025-08-12 13:40:16,712 [LIGHT OPTIM] [INFO] Final loss: 0.0021
+2025-08-12 13:40:17,784 [LIGHT OPTIM] [INFO] Final loss: 0.0011
+2025-08-12 13:40:18,580 [LIGHT OPTIM] [INFO] Final loss: 0.0019
+2025-08-12 13:40:19,362 [LIGHT OPTIM] [INFO] Final loss: 0.0019
+2025-08-12 13:40:20,322 [LIGHT OPTIM] [INFO] Final loss: 0.0021
+2025-08-12 13:40:20,642 [LIGHT OPTIM] [INFO] Final loss: 0.0005
+2025-08-12 13:40:20,946 [LIGHT OPTIM] [INFO] Final loss: 0.0010
+2025-08-12 13:40:21,265 [LIGHT OPTIM] [INFO] Final loss: 0.0014
+2025-08-12 13:40:21,511 [LIGHT OPTIM] [INFO] Final loss: 0.0015
+2025-08-12 13:40:22,058 [STITCHER] [INFO] Fragment 0 adding to final blend
+2025-08-12 13:40:34,126 [STITCHER] [INFO] Peak usage: 1311.46 MB
+2025-08-12 13:40:34,237 [STITCHER] [INFO] [1]    Warping with estimated homography
+2025-08-12 13:40:36,486 [OPTICAL FLOW] [INFO] Estimating flow on 32 patches
+2025-08-12 13:40:47,773 [STITCHER] [INFO] [1]  Scaling flow by 1.6666666666666667
+2025-08-12 13:40:52,601 [STITCHER] [INFO] [1]    Estimating optical flow
+2025-08-12 13:40:52,881 [STITCHER] [INFO] [1] Adjusting light
+2025-08-12 13:40:56,588 [LIGHT OPTIM] [INFO] Final loss: 0.0037
+2025-08-12 13:40:57,770 [LIGHT OPTIM] [INFO] Final loss: 0.0029
+2025-08-12 13:40:58,726 [LIGHT OPTIM] [INFO] Final loss: 0.0014
+2025-08-12 13:40:59,889 [LIGHT OPTIM] [INFO] Final loss: 0.0050
+2025-08-12 13:41:00,816 [LIGHT OPTIM] [INFO] Final loss: 0.0057
+2025-08-12 13:41:01,780 [LIGHT OPTIM] [INFO] Final loss: 0.0032
+2025-08-12 13:41:02,918 [LIGHT OPTIM] [INFO] Final loss: 0.0056
+2025-08-12 13:41:04,090 [LIGHT OPTIM] [INFO] Final loss: 0.0043
+2025-08-12 13:41:05,079 [LIGHT OPTIM] [INFO] Final loss: 0.0044
+2025-08-12 13:41:05,571 [STITCHER] [INFO] Fragment 1 adding to final blend
+2025-08-12 13:41:17,495 [STITCHER] [INFO] Peak usage: 1312.30 MB
+2025-08-12 13:41:17,495 [STITCHER] [INFO] [2]    Warping with estimated homography
+2025-08-12 13:41:19,661 [OPTICAL FLOW] [INFO] Estimating flow on 12 patches
+2025-08-12 13:41:25,104 [STITCHER] [INFO] [2]  Scaling flow by 1.6666666666666667
+2025-08-12 13:41:30,253 [STITCHER] [INFO] [2]    Estimating optical flow
+2025-08-12 13:41:30,511 [STITCHER] [INFO] [2] Adjusting light
+2025-08-12 13:41:33,940 [LIGHT OPTIM] [INFO] Final loss: 0.0010
+2025-08-12 13:41:34,711 [LIGHT OPTIM] [INFO] Final loss: 0.0009
+2025-08-12 13:41:35,307 [LIGHT OPTIM] [INFO] Final loss: 0.0015
+2025-08-12 13:41:35,676 [LIGHT OPTIM] [INFO] Final loss: 0.0008
+2025-08-12 13:41:36,036 [STITCHER] [INFO] Fragment 2 adding to final blend
+2025-08-12 13:41:46,544 [STITCHER] [INFO] Peak usage: 1311.24 MB
+2025-08-12 13:41:46,544 [STITCHER] [INFO] [3]    Warping with estimated homography
+2025-08-12 13:41:49,193 [OPTICAL FLOW] [INFO] Estimating flow on 55 patches
+2025-08-12 13:42:06,654 [STITCHER] [INFO] [3]  Scaling flow by 1.6666666666666667
+2025-08-12 13:42:11,547 [STITCHER] [INFO] [3]    Estimating optical flow
+2025-08-12 13:42:11,842 [STITCHER] [INFO] [3] Adjusting light
+2025-08-12 13:42:15,838 [LIGHT OPTIM] [INFO] Final loss: 0.0008
+2025-08-12 13:42:16,987 [LIGHT OPTIM] [INFO] Final loss: 0.0013
+2025-08-12 13:42:18,111 [LIGHT OPTIM] [INFO] Final loss: 0.0008
+2025-08-12 13:42:18,748 [LIGHT OPTIM] [INFO] Final loss: 0.0025
+2025-08-12 13:42:19,697 [LIGHT OPTIM] [INFO] Final loss: 0.0007
+2025-08-12 13:42:20,819 [LIGHT OPTIM] [INFO] Final loss: 0.0014
+2025-08-12 13:42:21,856 [LIGHT OPTIM] [INFO] Final loss: 0.0010
+2025-08-12 13:42:22,508 [LIGHT OPTIM] [INFO] Final loss: 0.0015
+2025-08-12 13:42:23,544 [LIGHT OPTIM] [INFO] Final loss: 0.0008
+2025-08-12 13:42:24,373 [LIGHT OPTIM] [INFO] Final loss: 0.0020
+2025-08-12 13:42:25,414 [LIGHT OPTIM] [INFO] Final loss: 0.0013
+2025-08-12 13:42:26,057 [LIGHT OPTIM] [INFO] Final loss: 0.0011
+2025-08-12 13:42:27,107 [LIGHT OPTIM] [INFO] Final loss: 0.0011
+2025-08-12 13:42:28,232 [LIGHT OPTIM] [INFO] Final loss: 0.0015
+2025-08-12 13:42:29,266 [LIGHT OPTIM] [INFO] Final loss: 0.0014
+2025-08-12 13:42:29,872 [LIGHT OPTIM] [INFO] Final loss: 0.0017
+2025-08-12 13:42:30,461 [STITCHER] [INFO] Fragment 3 adding to final blend
+2025-08-12 13:42:43,593 [STITCHER] [INFO] Peak usage: 1312.38 MB
+2025-08-12 13:42:43,593 [STITCHER] [INFO] [4]    Warping with estimated homography
+2025-08-12 13:42:46,248 [OPTICAL FLOW] [INFO] Estimating flow on 36 patches
+2025-08-12 13:42:58,294 [STITCHER] [INFO] [4]  Scaling flow by 1.6666666666666667
+2025-08-12 13:43:03,135 [STITCHER] [INFO] [4]    Estimating optical flow
+2025-08-12 13:43:03,417 [STITCHER] [INFO] [4] Adjusting light
+2025-08-12 13:43:07,208 [LIGHT OPTIM] [INFO] Final loss: 0.0007
+2025-08-12 13:43:08,370 [LIGHT OPTIM] [INFO] Final loss: 0.0009
+2025-08-12 13:43:09,268 [LIGHT OPTIM] [INFO] Final loss: 0.0019
+2025-08-12 13:43:10,116 [LIGHT OPTIM] [INFO] Final loss: 0.0011
+2025-08-12 13:43:11,058 [LIGHT OPTIM] [INFO] Final loss: 0.0016
+2025-08-12 13:43:11,979 [LIGHT OPTIM] [INFO] Final loss: 0.0020
+2025-08-12 13:43:13,064 [LIGHT OPTIM] [INFO] Final loss: 0.0010
+2025-08-12 13:43:14,080 [LIGHT OPTIM] [INFO] Final loss: 0.0019
+2025-08-12 13:43:14,964 [LIGHT OPTIM] [INFO] Final loss: 0.0029
+2025-08-12 13:43:15,211 [LIGHT OPTIM] [INFO] Final loss: 0.0018
+2025-08-12 13:43:15,449 [LIGHT OPTIM] [INFO] Final loss: 0.0038
+2025-08-12 13:43:15,633 [LIGHT OPTIM] [INFO] Final loss: 0.0055
+2025-08-12 13:43:16,121 [STITCHER] [INFO] Fragment 4 adding to final blend
+2025-08-12 13:43:27,648 [STITCHER] [INFO] Peak usage: 1312.36 MB
+2025-08-12 13:43:27,760 [STITCHER] [INFO] [5]    Warping with estimated homography
+2025-08-12 13:43:30,565 [OPTICAL FLOW] [INFO] Estimating flow on 54 patches
+2025-08-12 13:43:48,006 [STITCHER] [INFO] [5]  Scaling flow by 1.6666666666666667
+2025-08-12 13:43:53,101 [STITCHER] [INFO] [5]    Estimating optical flow
+2025-08-12 13:43:53,403 [STITCHER] [INFO] [5] Adjusting light
+2025-08-12 13:43:57,431 [LIGHT OPTIM] [INFO] Final loss: 0.0006
+2025-08-12 13:43:58,520 [LIGHT OPTIM] [INFO] Final loss: 0.0014
+2025-08-12 13:43:59,690 [LIGHT OPTIM] [INFO] Final loss: 0.0014
+2025-08-12 13:44:00,889 [LIGHT OPTIM] [INFO] Final loss: 0.0014
+2025-08-12 13:44:01,132 [LIGHT OPTIM] [INFO] Final loss: 0.0032
+2025-08-12 13:44:01,937 [LIGHT OPTIM] [INFO] Final loss: 0.0006
+2025-08-12 13:44:02,867 [LIGHT OPTIM] [INFO] Final loss: 0.0013
+2025-08-12 13:44:03,652 [LIGHT OPTIM] [INFO] Final loss: 0.0015
+2025-08-12 13:44:04,684 [LIGHT OPTIM] [INFO] Final loss: 0.0009
+2025-08-12 13:44:04,938 [LIGHT OPTIM] [INFO] Final loss: 0.0018
+2025-08-12 13:44:06,247 [LIGHT OPTIM] [INFO] Final loss: 0.0006
+2025-08-12 13:44:07,173 [LIGHT OPTIM] [INFO] Final loss: 0.0010
+2025-08-12 13:44:08,002 [LIGHT OPTIM] [INFO] Final loss: 0.0012
+2025-08-12 13:44:08,783 [LIGHT OPTIM] [INFO] Final loss: 0.0006
+2025-08-12 13:44:09,040 [LIGHT OPTIM] [INFO] Final loss: 0.0010
+2025-08-12 13:44:09,465 [LIGHT OPTIM] [INFO] Final loss: 0.0003
+2025-08-12 13:44:09,979 [LIGHT OPTIM] [INFO] Final loss: 0.0009
+2025-08-12 13:44:10,506 [LIGHT OPTIM] [INFO] Final loss: 0.0008
+2025-08-12 13:44:10,946 [LIGHT OPTIM] [INFO] Final loss: 0.0009
+2025-08-12 13:44:11,052 [LIGHT OPTIM] [INFO] Final loss: 0.0007
+2025-08-12 13:44:11,662 [STITCHER] [INFO] Fragment 5 adding to final blend
