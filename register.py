@@ -125,7 +125,7 @@ class StitchApp():
             gc.collect()
 
             print("Mask")
-            frag_mask = np.astype(self.optical.warp_mask(np.astype(frag_mask, np.float32), flow), bool)
+            frag_mask = self.optical.warp_mask(frag_mask.astype(np.float32), flow).astype(bool)
             del flow
             gc.collect()
 
