@@ -45,11 +45,11 @@ or start continuous mode, which keeps running and monitoring for new tasks.
 
 **One-shot**
 ```bash
-  docker compose up stitcher
+  docker compose up exposea
 ```
 **Continuous service**
 ```bash
-  docker compose up stitcher_service
+  docker compose up exposea_service
 ```
 #### Python script
 To run simple example as python script

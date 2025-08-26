@@ -15,10 +15,10 @@ FROM python:3.11-slim as stitcher
 RUN apt-get update && apt-get install -y build-essential git libgl1 libglib2.0-0 libopenjp2-tools && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
-COPY --from=git_stage /app/StitcherA/requirements.txt ./requirements.txt
+COPY --from=git_stage /app/Exposea/requirements.txt ./requirements.txt
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-COPY --from=git_stage /app/StitcherA ./
+COPY --from=git_stage /app/Exposea ./
 
 COPY entrypoint-oneshot.sh /app/entrypoint-oneshot.sh
 COPY entrypoint-service.sh /app/entrypoint-service.sh
