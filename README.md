@@ -16,7 +16,7 @@ Supported version of Python >= 3.10 and <= 3.12
 
 Clone the repository
  ```bash
-  git clone git@github.com:DCGM/Exposea.git
+  git clone https://github.com/DCGM/Exposea.git
   cd Exposea
  ```  
 Instalation is supported through pip and as a docker image
