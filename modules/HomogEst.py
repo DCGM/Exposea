@@ -2,9 +2,15 @@ import cv2
 from lightglue.utils import load_image, rbd
 import cv2 as cv
 import os
+import sys
 from lightglue import viz2d
+from typing_extensions import override
+
 from utils.homography_optimalizer import *
 from lightglue import LightGlue, SuperPoint
+
+
+
 import torch
 
 from torchvision.transforms import v2
@@ -74,7 +80,7 @@ def save_loftr_matches(
 def _save_debug_imgs(dat1, dat2, matches, path="./plots/matches.jpg"):
     axes = viz2d.plot_images([dat1[0], dat2[0]], adaptive=False, dpi=500)
     viz2d.plot_matches(dat1[1], dat2[1], color="lime", lw=0.2)
-    viz2d.add_text(0, f'Stop after {matches["stop"]} layers | {len(dat1[2])},  {len(dat2[2])}', fs=20)
+    #viz2d.add_text(0, f'Stop after {matches["stop"]} layers | {len(dat1[2])},  {len(dat2[2])}', fs=20)
     viz2d.save_plot(path)
 
 
@@ -94,12 +100,13 @@ class HomogEstimator:
         # Init feature extractor
         torch.set_grad_enabled(False)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        self.extractor = SuperPoint(max_num_keypoints=config.homog.max_feat_points).eval().to(self.device)
-        # Init feature matcher
-        self.matcher = LightGlue(features="superpoint",depth_confidence=-1,
-        width_confidence=-1).eval().to(self.device)
-
+        if self.config.homog.feature_matcher == 'LightGlue':
+            self.extractor = SuperPoint(max_num_keypoints=config.homog.max_feat_points).eval().to(self.device)
+            # Init feature matcher
+            self.matcher = LightGlue(features="superpoint",depth_confidence=-1,
+            width_confidence=-1).eval().to(self.device)
+        else:
+            raise NotImplementedError
         # Init optimizer
         if config.homog.do_optimization:
             print("Loading optimizer :", config.homog.optimizer)
@@ -119,6 +126,92 @@ class HomogEstimator:
         return fragment.squeeze(0)
 
 
+    # def run_matching(self, ref_img, frag_path, adjust_scale=0):
+    #     frag_img = self.matcher.load_image(frag_path)
+    #
+    #     if hasattr(self.config, "relative_scale"):
+    #         try:
+    #             frag_img = self.adjust_fragment(frag_img, 1 / (self.config.relative_scale + adjust_scale))
+    #         except:
+    #             self.logger.error("Invalid value in relative scale")
+    #
+    #     elif hasattr(self.config, "frag_ref_dpi"):
+    #         try:
+    #             frag_img = self.adjust_fragment(frag_img,
+    #                                             1 / (self.config.frag_ref_dpi[0] / self.config.frag_ref_dpi[1]))
+    #         except:
+    #             self.logger.error("Invalid value in frag_ref_dpi")
+    #
+    #     # For debug output
+    #     if self.config.homog.debug:
+    #         self.images = (np.asarray(ref_img.permute(1, 2, 0).cpu()), np.asarray(frag_img.permute(1, 2, 0).cpu()))
+    #     result = self.matcher(frag_img, ref_img)
+    #     return result
+
+
+    def match_details(self, frag_img, adjust_scale=0):
+
+        if hasattr(self.config, "relative_scale"):
+            try:
+                scale =  1 / np.clip(self.config.relative_scale + adjust_scale + 1e-5, 1, 100)
+                frag_img = self.adjust_fragment(frag_img, scale)
+            except:
+                self.logger.error("Invalid value in relative scale")
+
+        else:
+            self.logger.error("Missing 'relative_scale' parameter unable to autofix feature matching")
+
+        return frag_img
+
+    def retry_matching(self, feats_ref, frag_path,):
+        """
+        Retries computing the matching between a reference feature set and a fragment
+        image multiple times with different scale adjustments. If enough matches are
+        found, computes the homography matrix and matched keypoints.
+
+        Parameters:
+        feats_ref : tensor
+            The extracted feature descriptors for the reference image.
+        frag_path : str
+            Path to the fragment image whose features are to be matched with the
+            reference.
+
+        Returns:
+        tuple
+            A tuple containing:
+            - H: Homography matrix computed between the reference image and the
+              fragment image, or None if sufficient matches are not found.
+            - mkpts: Matched keypoints between the reference and fragment images,
+              or None if sufficient matches are not found.
+        """
+        # Retry with different relative scales
+
+        H, mkpts = None, None
+        scale_modifiers = [1, -1, 2, -2, 4, -4]
+        for scale_modifier in scale_modifiers:
+            frag_img = load_image(frag_path)
+            frag_img = self.match_details(frag_img, adjust_scale=scale_modifier)
+            feats_frag = self.extractor.extract(frag_img.to(self.device))
+            matches_a_b = self.matcher({"image0": feats_ref, "image1": feats_frag})
+            if matches_a_b['matches'][0].shape[0] > self.config.homog.min_matches:
+                H, _, mkpts = self.get_homography(feats_ref, feats_frag, matches_a_b, (0, -1))
+                break
+        return H, mkpts
+
+    def match_fragments(self, feats_ref, frag_img, idx):
+
+        # Try to match details according to specified values in donfig
+        frag_img = self.match_details(frag_img)
+        feats_frag = self.extractor.extract(frag_img.to(self.device))
+        # Match features with reference
+        matches_a_b = self.matcher({"image0": feats_ref, "image1": feats_frag})
+        self.logger.info(
+            f"[{idx}] Num. Features: {feats_frag['keypoints'].shape[1]} | Matches {matches_a_b['matches'][0].shape[0]}")
+        # Compute homography
+        H, m, mkpts = self.get_homography(feats_ref, feats_frag, matches_a_b, (0, idx))
+
+        return H, mkpts
+
     def register(self, ref_path: str, frag_paths: list[str]):
         # Get ref img
         self.logger.info(f"Loading reference from {ref_path}")
@@ -126,42 +219,23 @@ class HomogEstimator:
         # Extract features
         feats_ref = self.extractor.extract(ref_img.to(self.device))
         self.logger.info(f"REF Num. Features: {feats_ref['keypoints'].shape[1]}")
+
         # Iterate over fragments and estimate homography
-        homographies = []
-        corrs = []
-        to_del = []
+        homographies, corrs, to_del = [], [], []
         for idx, frag_path in enumerate(frag_paths):
             # Extract frag features
             self.logger.info(f"[{idx}] Loading fragment from {frag_path}")
             frag_img = load_img(frag_path)
-
-            if hasattr(self.config, "relative_scale"):
-                try:
-                    frag_img = self.adjust_fragment(frag_img, 1 / self.config.relative_scale)
-                except:
-                    self.logger.error("Invalid value in relative scale")
-
-            elif hasattr(self.config, "frag_ref_dpi"):
-                try:
-                    frag_img = self.adjust_fragment(frag_img, 1 / (self.config.frag_ref_dpi[0] / self.config.frag_ref_dpi[1]))
-                except:
-                    self.logger.error("Invalid value in frag_ref_dpi")
-
-            # For debug output
-            if self.config.homog.debug:
-                self.images = (ref_img, frag_img)
-
-            feats_frag = self.extractor.extract(frag_img.to(self.device))
-            # Find matches between images
-            matches_a_b = self.matcher({"image0": feats_ref, "image1": feats_frag})
-            self.logger.info(f"[{idx}] Num. Features: {feats_frag['keypoints'].shape[1]} | Matches {matches_a_b['matches'][0].shape[0]}")
-            # Ger homography from image b to a
-            H, m, mkpts = self.get_homography(feats_ref, feats_frag, matches_a_b, (0, idx))
-
+            # Match features with between ref and frag and compute homography
+            H, mkpts = self.match_fragments(feats_ref, frag_img, idx)
+            # If we were unable to compute homography or not enough point were match try to fix it
+            if H is None or mkpts[0].shape[0] < self.config.homog.min_matches:
+                self.logger.warning(f"Autofix | Matcher was unable to estimate homography trying simple autofix")
+                H, mkpts = self.retry_matching(feats_ref, frag_path)
+            # if we fail to estimate homography after simple autofix performed than dont use that fragment
             if H is None:
                 to_del.append(idx)
                 continue
-
             homographies.append(H)
             corrs.append(mkpts)
 

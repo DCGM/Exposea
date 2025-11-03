@@ -190,7 +190,7 @@ class OpticalFlow:
         # Get the flow into dimension and position of overlap image
         flow_in_ov[o_y:o_y + o_h, o_x:o_x + o_w] = stitched_flow[:o_h, :o_w]
 
-        if self.config.debug:
+        if self.config.optical.debug:
             stitched_flow_img = self.np_flow_to_img(stitched_flow)
             cv.imwrite(f"./plots/stitched_flow_{debug_idx}.jpg", stitched_flow_img)
             flow_in_ov_img = self.np_flow_to_img(flow_in_ov)

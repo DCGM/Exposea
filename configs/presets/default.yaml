@@ -18,6 +18,7 @@ homog:
   feature_matcher: LightGlue # Method to match features
   do_optimization: False # Turn optimization on
   max_matches: 200 # Max points to match
+  min_matches: 10
   optimizer: marek # Type of optimization
 
   # Preload saved homographies

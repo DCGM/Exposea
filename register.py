@@ -29,6 +29,21 @@ import gc
 from utils import timer
 
 class StitchApp():
+    """
+    A class for controlling the image stitching application.
+
+    This class provides a comprehensive implementation for handling the process of image stitching, including homography
+    estimation, optical flow, blending, light equalization, and saving the final results in specified formats. It uses a
+    configuration object to initialize the application and manages the interaction of various components like homography
+    estimators, optical flow computation, and image blending. The class logs key steps and outputs for debugging and
+    progress tracking.
+
+    Methods:
+        run: Executes the main stitching process.
+        save_final_img: Saves the stitched image in the specified format.
+        save_in_jp2: Saves images in the JPEG 2000 format using the external tool opj_compress.
+        run_homog: Performs homography estimation.
+    """
 
     def __init__(self, config):
         self.logger = logging.getLogger('STITCHER')
@@ -65,7 +80,23 @@ class StitchApp():
 
     def run(self):
         """
-        Runs the main stitch app.
+        Runs the main image stitching process by performing the following steps sequentially:
+        1. Prepares the reference image by rectangularizing and resizing it to the desired resolution.
+        2. Calculates and caches parameters for image processing.
+        3. Estimates homographies for a set of image fragments.
+        4. Initializes progressive blending for stitching.
+        5. Sequentially processes each image fragment by applying homography, estimating optical flow, adjusting lighting,
+           and adding the output to the final blend.
+        6. Saves the final stitched image.
+
+        Raises:
+            RuntimeError: If there are issues with image processing, stitching, or resource cleanup.
+
+        Parameters:
+            None
+
+        Returns:
+            None
         """
 
         if self.debug:
@@ -159,7 +190,6 @@ class StitchApp():
 
         final_img = prog_blend.get_current_blend()
 
-
         self.save_final_img(final_img)
 
         self.logger.info(f"Average Time | Optical flow {self.flow_timer.average_time}")
@@ -205,7 +235,7 @@ class StitchApp():
         try:
             subprocess.run(cmd, check=True)
         except subprocess.CalledProcessError as e:
-            self.logger.error(f"Error: opj_compress failed with exit code {e.returncode}")
+            self.logger.error(f"opj_compress failed with exit code {e.returncode}")
             raise
 
     def run_homog(self, resize=False):
@@ -221,7 +251,8 @@ class StitchApp():
                 homographies = pickle.load(f)
         else:
             # The img paths is sent to load the images in correct format for feature extraction and matching
-            homographies, _ , _ = self.homog_estimator.register(self.ref_resized_path, self.frag_paths)
+            # homographies, _ , to_del = self.homog_estimator.match(self.ref_resized_path, self.frag_paths)
+            homographies, _, to_del = self.homog_estimator.register(self.ref_resized_path, self.frag_paths)
            # self.frag_paths = [val for idx, val in enumerate(self.frag_paths) if idx not in to_del]
 
             if self.config.homog.save:
