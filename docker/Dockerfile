@@ -4,9 +4,9 @@ FROM node:18 as git_stage
 
 WORKDIR /app
 RUN apt-get update && apt-get install -y git && apt-get purge -y --auto-remove  && rm -rf /var/lib/apt/lists/*
-ARG RELEASE_TAG="v0.0.2"
-RUN git clone --single-branch https://github.com/DCGM/Exposea.git
- 
+ARG RELEASE_TAG="v1.0_Akita"
+RUN git clone --branch ${RELEASE_TAG} --single-branch https://github.com/DCGM/Exposea.git
+
 ####################################################################################333
 
 
