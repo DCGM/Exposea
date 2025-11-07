@@ -13,29 +13,41 @@ from memory_profiler import profile
 
 class Stitcher():
     """
-        Main class holding the functionality for stitching fragments into whole images using different methods.
+    The Stitcher class is designed to handle image stitching operations.
+
+    This class provides methods for warping and blending images. By utilizing
+    the configurations provided during initialization, the Stitcher class can
+    process images efficiently and optionally save debug outputs. Users can
+    use the implemented warping and blending techniques to generate final
+    stitched images based on input parameters and configurations.
     """
     def __init__(self, config, debug=False):
-        """
-        Initialize the stitcher class.
-        Args:
-            config (DictConfig): Hydra configuration
-            debug (bool): If debug mode is on save images to plots
-        """
+
         self.config = config
         self.debug = debug
 
     def warp_image(self, homography, frag_path, res=None):
         """
-        Warps image with homography.
-        Args:
-            homography:
-            frag_path:
+        Warp the given image fragment using a homography matrix.
 
-        Returns: warped fragment and mask
+        This function applies a homography transformation to warp an image fragment
+        into a specific coordinate space. The resulting warped image and a corresponding
+        mask are returned. The mask indicates valid regions within the warped image.
+        If no resolution is provided, the function uses the default final resolution
+        from configuration, otherwise it uses the specified resolution.
 
+        Parameters:
+            homography: numpy.ndarray
+                A 3x3 homography matrix for warping the image.
+            frag_path: str
+                The path to the image fragment to be warped.
+            res: tuple[int, int], optional
+                The target resolution (height, width) for the warped image. Defaults to None.
+
+        Returns:
+            tuple[numpy.ndarray, numpy.ndarray]
+                The warped image as a numpy array and its corresponding mask.
         """
-
         # Get the corner of the final image
 
         x_min, y_min = (0, 0)
@@ -111,6 +123,24 @@ class Stitcher():
         return stitched
 
 class DebugBlender:
+    """
+    A class for blending image fragments with a mask to form a cumulative blend.
+
+    This class allows for the addition of image fragments and their respective masks
+    to a blending process, accumulating results while taking weights into account.
+
+    Attributes:
+        config: Configuration for the blending process.
+        alpha: Blend factor used in processing.
+        img: Numpy array holding the current blended image.
+        mask: Boolean numpy array indicating the accumulated blending mask.
+
+    Methods:
+        add_fragment(fragment, mask):
+            Adds a new image fragment to the blend using the provided mask.
+        get_current_blend():
+            Retrieves the current blended image as an unsigned 8-bit integer numpy array.
+    """
     def __init__(self, size,config):
         self.config = config
         self.alpha = 0.5
@@ -135,6 +165,43 @@ class DebugBlender:
 
 
 class ActualBlender:
+    """
+    Represents a class for progressive blending of image fragments using
+    homographies and weighted blending techniques.
+
+    The ActualBlender class is designed for stitching and blending image
+    fragments with progressive updates, leveraging homography-based
+    transformations. It manages the blending process with configurable settings
+    including an erosion kernel, blend width, and other progressive blending
+    mechanisms.
+
+    Attributes:
+        config (ConfigType): Configuration object for stitching and blending.
+        blend_width (int): Width for applying feathering blend techniques.
+        erode_kernel (np.ndarray): Kernel used for morphological erosion during mask processing.
+        progress_blend_img (np.ndarray): Accumulator image for progressively blended fragments.
+        progress_blend_mask (np.ndarray): Boolean mask identifying which areas have been blended.
+        progressive_val_accum (np.ndarray): Accumulator for the minimum determinant values, representing
+            the best blending pixels.
+        best_idx_acum (np.ndarray): Array storing the identifier of the fragment contributing
+            the best pixel for each position.
+
+    Methods:
+        add_fragment(fragment: np.ndarray, mask: np.ndarray, homography: np.ndarray, key: int):
+            Adds a new image fragment to the progressive blending result.
+
+        get_current_blend() -> np.ndarray:
+            Retrieves the current blended image.
+
+        compute_jacobian_determinant(H: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
+            Computes the Jacobian determinant for each pixel after applying a homography.
+
+        calc_border_dist(seam: np.ndarray, k: int = 100, type: int = cv.THRESH_BINARY_INV) -> np.ndarray:
+            Calculates the border distance transform for a binary mask.
+
+        blend_weighted(imgs: list[np.ndarray], weights: list[np.ndarray]) -> np.ndarray:
+            Blends multiple weighted images together and returns the result.
+    """
     def __init__(self, config, ref_img):
         res = (int(config.final_res[0]), int(config.final_res[1]))
 
@@ -156,7 +223,23 @@ class ActualBlender:
 
 
     def add_fragment(self, fragment, mask, homography, key):
+        """
+        Add a new fragment to the image blend while updating masks and accumulators.
+        Applies erosion to the mask, calculates jacobian determinants, determines the
+        best values for blending, and updates relevant accumulation arrays. Optionally
+        saves debug images at each step if debugging is enabled within the configuration.
 
+        Parameters:
+            fragment: np.ndarray
+                The fragment image to be added to the blend.
+            mask: np.ndarray
+                The binary mask indicating the valid region of the fragment.
+            homography: np.ndarray
+                The homography matrix for transforming the fragment.
+            key: int
+                The unique identifier for the current fragment.
+
+        """
         shrunk_mask = cv.erode(mask.astype(np.uint8), self.erode_kernel, iterations=1).astype(bool)
         if self.config.debug:
             cv.imwrite(f"./plots/shrunk_mask_{key}.jpg", shrunk_mask.astype(np.uint8) * 255)
@@ -209,12 +292,23 @@ class ActualBlender:
 
     def compute_jacobian_determinant(self, H, shape):
         """
-        Computes the Jacobian determinant for each pixel after applying homography H.
-        Args:
-            H (np.ndarray): 3x3 homography matrix.
-            shape (tuple[int, int]): Shape (height, width) of the image.
-        Return:
-            np.ndarray: A 2D array (H x W) representing the Jacobian determinant at each pixel.
+        Computes the determinant of the Jacobian matrix for a given homography transformation and image shape.
+
+        The function calculates the determinant of the Jacobian matrix for each pixel,
+        determining local distortions introduced by the homography when mapping pixel
+        coordinates from one image to another.
+
+        Parameters:
+        H : array-like of shape (3, 3)
+            The homography transformation matrix.
+        shape : tuple
+            A tuple representing the dimensions of the image (height, width), where the
+            Jacobian determinant is calculated.
+
+        Returns:
+        array
+            A 2D array containing the determinant of the Jacobian matrix for each pixel
+            coordinate in the output image.
         """
         h, w = shape[:2]
 
@@ -242,16 +336,23 @@ class ActualBlender:
 
     def calc_border_dist(self, seam, k=100, type=cv.THRESH_BINARY_INV):
         """
-          Calculates the border distance transform for a mask.
+        Calculates a normalized distance map from the seam to the nearest seam pixel
+        using distance transform. The resulting map represents normalized distances
+        that can be used as a measure of proximity.
 
-          Args:
-              seam (np.ndarray): Binary seam image (H x W), where the pixels are 1 or 0.
-              k (int, optional): A scaling factor to normalize the distance in pixels. Default is 100.
-              type (int, optional): The thresholding type used for creating the binary mask. Default is cv.THRESH_BINARY_INV.
+        Parameters:
+            seam (np.ndarray): A binary array indicating the seam where proximity is
+                calculated. Each element should be in the range of 0 to 1.
+            k (int, optional): Normalization factor for the distance map. Higher values
+                make the distances more granular. Default is 100.
+            type (int, optional): Type of thresholding applied to the seam for creating
+                the binary mask. Default is cv.THRESH_BINARY_INV.
 
-          Returns:
-              np.ndarray: A 3-channel image (H x W x 3) representing the border distance at each pixel.
-          """
+        Returns:
+            np.ndarray: A distance map normalized to values between 0 and 1. The map
+                is in the same dimensions as the image with an additional axis
+                replicated 3 times to match RGB channels.
+        """
         seam = np.array(seam * 255, dtype=np.uint8)
         #  Apply thresholding to create a binary mask (invert thresholding by default)
         _, thresh = cv.threshold(seam, 127, 255, type)
@@ -266,7 +367,22 @@ class ActualBlender:
         return seam_dist
 
     def blend_weighted(self, imgs, weights):
+        """
+        Blends multiple images using per-pixel weights. Each image is multiplied by its
+        corresponding weight, and the weighted images are summed together. The result
+        is normalized by the sum of the weights, avoiding division by zero.
 
+        Args:
+            imgs (List[np.ndarray]): A list of numpy arrays representing the images to
+                be blended. Each image must have the same shape.
+            weights (np.ndarray): A 3D numpy array of weights used for blending, with
+                shape (N, H, W), where N is the number of images, and H and W match the
+                dimensions of each image in the list.
+
+        Returns:
+            np.ndarray: A numpy array representing the blended image with the same
+                shape as each image in `imgs`.
+        """
         total_weight = np.sum(weights, axis=0)
         res_img = np.zeros_like(imgs[0])
         for idx, img in enumerate(imgs):

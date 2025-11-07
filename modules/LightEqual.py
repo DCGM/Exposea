@@ -8,6 +8,35 @@ import logging
 import sys
 
 class SpatialLightParams(nn.Module):
+    """
+    Implements a neural network module for spatial light parameters adjustment.
+
+    This class is designed to manipulate certain spatial light adjustment parameters such as
+    scaling, bias, and gamma transformation. It allows configurable modes that dictate which
+    transformations will be applied and provides the ability to interpolate these adjustments
+    to match the dimensions of the input images.
+
+    Attributes:
+        grid_H (int): Height of the grid used for spatial adjustments.
+        grid_W (int): Width of the grid used for spatial adjustments.
+        mode (list of str): Modes of operation, defining the types of spatial adjustments
+            applied (e.g., "scale", "bias", "color_scale", or "gamma").
+        alpha_map (torch.nn.Parameter, optional): A parameter representing the scaling factors
+            for spatial adjustment depending on the selected mode.
+        beta_map (torch.nn.Parameter, optional): A parameter representing the bias adjustments
+            for spatial adjustment depending on the selected mode.
+        gamma1 (torch.nn.Parameter, optional): A parameter used in gamma adjustment
+            for forward transformation.
+        gamma2 (torch.nn.Parameter, optional): A parameter used in gamma adjustment
+            for reverse transformation.
+
+    Methods:
+        interpolate(img):
+            Adjusts the input image based on the configuration of modes and the parameter maps.
+
+    Raises:
+        ValueError: If an unknown mode is specified in the `mode` parameter.
+    """
     def __init__(self, grid_size=32, mode=['scale']):
         super(SpatialLightParams, self).__init__()
         self.grid_H, self.grid_W = grid_size, grid_size
@@ -33,6 +62,19 @@ class SpatialLightParams(nn.Module):
             raise ValueError(f"Unknown modes: {mode}")
 
     def interpolate(self, img):
+        """
+        Adjusts image fragments by applying various transformations such as gamma correction,
+        scaling, color scaling, and biasing. The transformations are determined based on the
+        mode and attributes specified in the instance.
+
+        Parameters:
+            img: Tensor
+                A tensor representing image data. The last two dimensions indicate the height
+                and width of the image.
+
+        Returns:
+            Tensor: A tensor representing the adjusted image fragment.
+        """
         H, W = img.shape[2:4]
 
         adjusted_fragment = img
@@ -60,6 +102,23 @@ class SpatialLightParams(nn.Module):
 
 
 def split_image(img, fragment_height, fragment_width):
+    """
+    Splits an image into smaller fragments of specified height and width.
+
+    Parameters:
+        img: The input image as a 3D NumPy array.
+        fragment_height: int
+            The height of each fragment in pixels.
+        fragment_width: int
+            The width of each fragment in pixels.
+
+    Returns:
+        list[tuple[tuple[int, int], numpy.ndarray]]: A list of tuples where each
+        tuple contains:
+            - Coordinates (tuple of two integers): The top-left corner of the
+              fragment relative to the original image.
+            - Fragment (NumPy array): The extracted fragment of the image.
+    """
     img_h, img_w, _ = img.shape
     fragments = []
     for y in range(0, img_h, fragment_height):
@@ -69,6 +128,20 @@ def split_image(img, fragment_height, fragment_width):
     return fragments
 
 def compose_image(fragments, full_shape):
+    """
+    Composes a full image by placing fragments at specified positions.
+
+    Args:
+        fragments (list[tuple[tuple[int, int], numpy.ndarray]]): A list of
+            tuples where each tuple contains a position as (y, x) and the
+            corresponding image fragment as a NumPy array.
+        full_shape (tuple[int, int]): Shape of the full image to be composed
+            as (height, width).
+
+    Returns:
+        numpy.ndarray: The composed full image with all fragments placed at
+        their specified positions.
+    """
     result = np.zeros(full_shape, dtype=np.float32)
     for (y, x), frag in fragments:
         h, w = frag.shape[:2]
@@ -76,11 +149,30 @@ def compose_image(fragments, full_shape):
     return result
 
 def tile_equalize_fragments(flow_fragment, mask, ref_img, config):
+    """
+    Normalizes a fragmented image and adjusts its lighting by dividing it into smaller tiles
+    and equalizing their lighting with reference image tiles. The adjusted fragments are
+    recomposed into the original dimensions.
+
+    Parameters:
+        flow_fragment (np.ndarray): The original fragmented image to be processed.
+        mask (np.ndarray): The binary mask outlining the areas in the image to be adjusted.
+        ref_img (np.ndarray): The reference image used for lighting adjustments.
+        config: Configuration object containing settings such as tile size for adjustments.
+
+    Returns:
+        tuple: A tuple containing:
+            - np.ndarray: The adjusted image with normalized lighting.
+            - None: Placeholder for future extensions.
+    """
     logger = logging.getLogger("LIGHT OPTIM")
+
     # Get reference image and normalize it
     ref_norm = ref_img.astype(np.float32) / 255.0
+
     # Normalize fragment
     norm_frag = flow_fragment.astype(np.float32) / 255.0
+
     # Cut out only the area of fragment not the whole final res
     y_min, x_min = np.argwhere(mask[:, :, 0]).min(axis=0)  # Get min row and column
     y_max, x_max = np.argwhere(mask[:, :, 0]).max(axis=0)  # Get max row and column
@@ -108,6 +200,25 @@ def tile_equalize_fragments(flow_fragment, mask, ref_img, config):
 
 
 def equalize_frag(flow_fragment, mask, ref_img, config):
+    """
+    Normalizes a fragmented image and equalizing their lighting with reference image.
+
+    Args:
+        flow_fragment: The flow fragment represented as a numpy array, to be light-adjusted.
+        mask: Mask representing the region of interest in the flow fragment.
+        ref_img: Reference image represented as a numpy array, used for light adjustment.
+        config: Configuration object containing settings for various operations. Must include a 'debug'
+            attribute.
+
+    Returns:
+        A tuple containing:
+            - Adjusted flow fragment with light settings equalized to the reference image.
+            - Metadata or parameters 'm' resulting from the spatial light adjustment process.
+
+    Raises:
+        ValueError: If the required dimensions, data types, or configurations are not met.
+
+    """
     logger = logging.getLogger("LIGHT OPTIM")
     # Get reference image and normalize it
     ref_norm = ref_img.astype(np.float32) / 255.0
@@ -135,16 +246,24 @@ def equalize_frag(flow_fragment, mask, ref_img, config):
 
 def spatial_light_adjustment(fragment, reference, mask, config):
     """
-        Adjust the lighting of a fragment image to match a reference image with spatially varying correction.
-        :param
-           fragment: Fragment image (H, W, C) normalized to [0, 1].
-           reference: Reference image (H, W, C) normalized to [0, 1].
-           mask : Binary mask (H, W, C) indicating valid overlap region.
-           config: Configuration object containing all configuration parameters.
+    Optimizes the lighting in a spatially aware manner for an input image fragment based on a reference image,
+    using configurable optimization methods.
 
-       :return
-           adjusted: CV Image with adjusted lighting correction.
-       """
+    This function optimizes the lighting conditions of an image fragment to match those of a reference
+    image within a specified mask. It uses different loss functions and optimization techniques
+    (adam or LBFGS) based on the provided configuration parameters.
+
+    Arguments:
+        fragment (torch.Tensor): The input image fragment that needs adjustment. Shape expected as (H, W, C).
+        reference (torch.Tensor): The reference image that defines the target lighting. Shape expected as (H, W, C).
+        mask (numpy.ndarray): Mask specifying the region to match the lighting. Shape expected as (H, W, C).
+        config: Configuration object containing parameters for the optimization process.
+
+    Returns:
+        Tuple[torch.Tensor, SpatialLightParams]: A tuple where the first element is the final adjusted image
+                                                 in shape (H, W, C) and the second element is the optimized
+                                                 SpatialLightParams model instance.
+    """
     logger = logging.getLogger("LIGHT OPTIM")
     device = torch.cuda.current_device()
 

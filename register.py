@@ -10,6 +10,7 @@ import pprint
 import pickle
 
 import cv2
+import tifffile
 import numpy as np
 import torch.cuda
 import datetime
@@ -68,7 +69,7 @@ class StitchApp():
 
         # Load images paths
         self.ref_path, self.frag_paths = self.load_image_paths(False)
-        # Place holder for resized reference
+        # Placeholder for resized reference
         self.ref_resized_path = self.ref_path
 
         # debug printouts
@@ -199,15 +200,27 @@ class StitchApp():
 
 
     def save_final_img(self, img):
+        """
+        Saves the final image to the specified directory, either in the 'jp2', 'j2k', 'tiff', or 'tif' format if specified,
+        or defaults to PNG. Handles saving in JPEG 2000 and TIFF formats using appropriate methods and raises an error for
+        unsupported formats.
 
+        Parameters:
+            img: numpy.ndarray
+                The image to be saved.
+
+        Raises:
+            NotImplementedError: If the save format is not one of the supported formats ('tif', 'tiff', 'jp2', or 'j2k').
+        """
         if hasattr(self.config, 'save_format') and  self.config.save_format in ['jp2', 'j2k']:
             cv.imwrite(osp.join(self.out_dir, "final_stitch.png"), img)
             save_name = f"final_stitch.{self.config.save_format}"
             self.save_in_jp2(osp.join(self.out_dir, "final_stitch.png"), osp.join(self.out_dir, save_name))
-        # TODO Save with dedicated lib TIFFFILE
+
         elif hasattr(self.config, 'save_format') and  self.config.save_format in ['tiff', 'tif']:
             save_name = f"final_stitch.{self.config.save_format}"
-            cv.imwrite(osp.join(self.out_dir, save_name), img)
+            tifffile.imwrite(osp.join(self.out_dir, save_name), img)
+            #cv.imwrite(osp.join(self.out_dir, save_name), img)
 
         else:
             cv.imwrite(osp.join(self.out_dir, "final_stitch.png"), img)
@@ -217,6 +230,22 @@ class StitchApp():
 
 
     def save_in_jp2(self, i_path, o_pth):
+        """
+        Saves an image to the JP2 format using the `opj_compress` tool with specified
+        compression and encoding options. Logs the process and handles potential
+        errors occurring during the command execution.
+
+        Parameters:
+        i_path: str
+            Input path of the image to be converted.
+        o_pth: str
+            Output path where the converted JP2 image will be saved.
+
+        Raises:
+        subprocess.CalledProcessError
+            If the `opj_compress` command fails.
+
+        """
         self.logger.info(f"Saving {o_pth} using jp2 format")
         cmd = [
             'opj_compress',
@@ -239,12 +268,7 @@ class StitchApp():
             raise
 
     def run_homog(self, resize=False):
-        """
-        Runs the homography estimation
-        If save in config it saves the homographies
-        Returns:
 
-        """
         # Load or estimate homographies
         if self.config.homog.load:
             with open(self.config.homog.load, "rb") as f:
@@ -278,14 +302,22 @@ class StitchApp():
 
     def run_flow(self, ref_path, warped_frag, frag_name, resize=False):
         """
-        Gets optical flow, either loaded or calculated
-        Args:
-           ref_path:
-           warped_images:
-           frag_name:
+        Runs the optical flow computation process for a given image fragment and reference image.
+
+        This method checks if the optical flow data is already available to be loaded from a specified
+        path. If the data does not exist or loading is not configured, it computes the optical flow
+        between a reference image and a warped fragment. The computed flow data is optionally saved
+        to a specified path.
+
+        Arguments:
+            ref_path (str): The file path of the reference image used for optical flow computation.
+            warped_frag (numpy.ndarray): The warped fragment image for which the optical flow is computed.
+            frag_name (str): A unique name identifying the image fragment.
+            resize (bool): Whether resizing is applied during the optical flow process (default is False).
 
         Returns:
-
+            tuple: The first element is always `None` (reserved for future implementations), and the
+                second element is a numpy array representing the computed optical flow.
         """
         self.flow_timer.tic()
         # Check if load optical else compute flow
@@ -318,12 +350,18 @@ class StitchApp():
 
     def run_light_equal(self, ref_path, flow_fragment, frag_mask, resize=False):
         """
-        Runs the flow estimation
+        Equalizes the illumination of a flow fragment using a reference image. Provides optional resizing
+        of the reference image and configurable tiling for memory-efficient light optimization.
+
         Args:
-            ref (tuple): Reference image and its mask
-            flow_warped_images (dict): Dict of flow warped images {name: (image, mask)}
+            ref_path (str): Path to the reference image.
+            flow_fragment: The input fragment of flow to be equalized.
+            frag_mask: The mask covering the valid areas of the fragment.
+            resize (bool): Determines if the reference image should be resized before equalization.
 
         Returns:
+            Tuple: A tuple containing the light-adjusted fragment and an optional mask. If tiling is used,
+            the mask is always None.
         """
         self.lo_timer.tic()
         # Equalize light
@@ -341,7 +379,27 @@ class StitchApp():
             return light_adjusted, m
 
     def rect_ref(self):
+        """
+        Rectifies the reference image to a specified resolution using a perspective transform.
 
+        Performs a perspective transformation to align and warp the reference image based on
+        provided corner coordinates and final resolution settings. The rectified image is
+        then saved to a predefined path and the reference image path is updated.
+
+        Raises
+        ------
+        None
+
+        Parameters
+        ----------
+        self : Self
+            The instance of the class, providing access to configuration and reference
+            image settings.
+
+        Returns
+        -------
+        None
+        """
         ref_img = cv.imread(self.ref_path)
         height, width = self.config.final_res
         corner_coords = list(self.config.corner_coords)
@@ -364,7 +422,17 @@ class StitchApp():
         self.ref_path = path
 
     def calc_process_params(self):
+        """
+        Calculates and sets the processing parameters based on the final target resolution and aspect ratio.
 
+        This method derives the height and width to be used during processing while maintaining the
+        aspect ratio of the final target resolution. It adjusts the dimensions to match the required
+        aspect ratio either by width-first or height-first calculation. The final scaling factor
+        and the process dimensions are then updated and stored.
+
+        Raises:
+            None
+        """
         target_h, target_w = self.config.final_res
         target_aspect = target_w / target_h
 
@@ -385,8 +453,16 @@ class StitchApp():
 
     def resize_reference(self, size):
         """
-        Resizes the reference image to final resolution
-        Returns:
+        Resizes a reference image to the specified dimensions and saves it to a cache
+        location.
+
+        The function reads the reference image from the provided path, resizes it to
+        the given width and height, and saves the resized image to a specific directory.
+        The new path is then stored for further usage.
+
+        Parameters:
+            size (tuple[int, int]): The target dimensions (height, width) to which
+                the reference image will be resized.
         """
         ref = cv.imread(self.ref_path)
         h, w = size
@@ -433,6 +509,36 @@ def merge_dicts(default, override):
 
 
 def compose_configs(args):
+    """
+    Composes and merges configuration files from different sources including
+    input configuration, default configuration, and preset configurations.
+
+    The function performs the following steps:
+    1. Loads the input configuration file from the specified input path.
+    2. Loads the default configuration file.
+    3. Loads a preset configuration file based on the preset name in the input
+       configuration, or falls back to a default preset if none is specified.
+    4. Merges the default and preset configurations.
+    5. Merges the resulting configuration with the input configuration.
+    6. Updates the configuration with specific paths for output and input
+       directories.
+    7. Creates the output directory if it does not exist.
+
+    By combining configurations in the above manner, the function produces a
+    final configuration object that can be used for further processing.
+
+    Parameters:
+        args (Namespace): A Namespace object containing the following attributes:
+            - input (str): The path to the input directory.
+            - output (str): The path to the output directory.
+
+    Raises:
+        FileNotFoundError: Raised if the input configuration file does not exist
+            at the specified input path.
+
+    Returns:
+        DictConfig: The final composed and merged configuration object.
+    """
     logger = logging.getLogger('INITIALIZE')
     # Loading input config
     if not os.path.exists(osp.join(args.input, 'config.yaml')):
@@ -486,6 +592,7 @@ def args_process():
     return args
 
 def create_dirs(config):
+
     logger = logging.getLogger('INITIALIZE')
     logger.info("Creating cache dirs")
     os.makedirs("plots", exist_ok=True)
@@ -496,6 +603,20 @@ def create_dirs(config):
 
 # Launch the application for stitching the image
 def main():
+    """
+    This function serves as the main entry point for the application, handling initial setup,
+    configuration processing, logging setup, and launching the core application functionality.
+
+    Arguments:
+        None
+
+    Raises:
+        OSError: If an error occurs while accessing or creating directories.
+        FileNotFoundError: If a required file for configuration is missing.
+
+    Returns:
+        None
+    """
     # Parse args
     args = args_process()
     # Clear temp_init
