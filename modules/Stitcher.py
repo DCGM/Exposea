@@ -221,6 +221,34 @@ class ActualBlender:
         self.progressive_val_accum = np.ones(res) * 99999
         self.best_idx_acum = np.ones(res) * -1
 
+        # For CIF Metric
+        self.coarse_size = (1000, 1000)
+        self.frag_id_to_bit = {}  # fragment key -> bit index [0..N-1]
+        self.bit_to_frag_id = []  # optional reverse map
+        self.cand_bits = None
+        self.n_words = 0
+
+    def _ensure_fragment_registered(self, key: int):
+        """Assign a stable bit index to fragment key, grow cand_bits if needed."""
+        if key in self.frag_id_to_bit:
+            return
+
+        bit_idx = len(self.bit_to_frag_id)
+        self.frag_id_to_bit[key] = bit_idx
+        self.bit_to_frag_id.append(key)
+
+        needed_words = (bit_idx // 64) + 1
+        if self.cand_bits is None:
+            Wc, Hc = self.coarse_size
+            self.n_words = needed_words
+            self.cand_bits = np.zeros((Hc, Wc, self.n_words), dtype=np.uint64)
+        elif needed_words > self.n_words:
+            # Grow last dimension, keep existing data
+            Wc, Hc = self.coarse_size
+            new_bits = np.zeros((Hc, Wc, needed_words), dtype=np.uint64)
+            new_bits[..., :self.n_words] = self.cand_bits
+            self.cand_bits = new_bits
+            self.n_words = needed_words
 
     def add_fragment(self, fragment, mask, homography, key):
         """
@@ -241,6 +269,22 @@ class ActualBlender:
 
         """
         shrunk_mask = cv.erode(mask.astype(np.uint8), self.erode_kernel, iterations=1).astype(bool)
+
+        if self.config.metrics.calculate:
+            self._ensure_fragment_registered(key)
+            valid = shrunk_mask[:, :, 0].astype(np.uint8)  # 0/1
+
+            # Downsample to 1000x1000. OpenCV uses (W, H).
+            Wc, Hc = self.coarse_size
+            valid_coarse = cv.resize(valid, (Wc, Hc), interpolation=cv.INTER_NEAREST).astype(bool)
+
+            bit_idx = self.frag_id_to_bit[key]
+            word = bit_idx // 64
+            bit = np.uint64(1) << np.uint64(bit_idx % 64)
+
+            # Set this fragment's bit wherever it is valid in the coarse grid
+            self.cand_bits[valid_coarse, word] |= bit
+
         if self.config.debug:
             cv.imwrite(f"./plots/shrunk_mask_{key}.jpg", shrunk_mask.astype(np.uint8) * 255)
         y_min, x_min = np.argwhere(shrunk_mask[:, :, 0]).min(axis=0)  # Get min row and column
@@ -264,7 +308,7 @@ class ActualBlender:
         #shrunk_frag_best = cv.erode(frag_best_pixels_mask.astype(np.uint8), self.erode_kernel, iterations=1).astype(np.uint8)
         if self.config.debug:
             cv.imwrite(f"plots/frag_mask_{key}.jpg",((compare_idxs == 0) & shrunk_mask[:, :, 0]).astype(np.uint8) * 255)
-            cv.imwrite(f"plots/best_idx_acum{key}.jpg",  self.best_idx_acum.astype(np.uint8) * 10)
+            cv.imwrite(f"plots/best_idx_acum{key}.jpg",  self.best_idx_acum.astype(np.uint8) * 20)
 
         # Update current best pixel determinands
 
