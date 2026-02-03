@@ -1,4 +1,4 @@
-debug: False # To output global debug values
+debug: True # To output global debug values
 exp_name: name_not_specified # Used for saving partial outputs
 preset_name: default
 
@@ -41,7 +41,7 @@ optical:
   # Load saved flows
   load: # Path to FOLDER with saved flows
   save: # Path to FOLDER where save homogs if empty no save
-  debug: False
+  debug: True
 
 light_optim:
   grid_size: 32
