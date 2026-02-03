@@ -431,6 +431,9 @@ def merge_dicts(default, override):
             default[k] = v
     return default
 
+def get_presets(path):
+    return os.listdir(path)
+
 
 def compose_configs(args):
     logger = logging.getLogger('INITIALIZE')
@@ -443,13 +446,18 @@ def compose_configs(args):
 
     # Load default config
     logger.info(f"Loading default config from configs/presets/default.yaml")
-    default_cfg = OmegaConf.load("configs/presets/default.yaml")
+    default_cfg = OmegaConf.load("configs/default.yaml")
     OmegaConf.set_struct(default_cfg, False)
 
     # Load preset if not specified load p_normal
     if hasattr(input_cfg, "preset_name"):
         logger.info(f"Loading preset {input_cfg.preset_name}")
-        preset_cfg = OmegaConf.load(f"configs/presets/{input_cfg.preset_name}.yaml")
+        try:
+            preset_cfg = OmegaConf.load(f"configs/presets/{input_cfg.preset_name}.yaml")
+        except FileNotFoundError:
+            presets = get_presets(f"configs/presets/")
+            logger.error(f"Preset {input_cfg.preset_name} not found. Available presets: {presets}")
+            raise FileNotFoundError(f"Preset {input_cfg.preset_name} not found. Available presets: {presets}")
     else:
         logger.warning(f"! Preset not specified ! Loading p_normal.yaml")
         preset_cfg = OmegaConf.load(f"configs/presets/p_normal.yaml")
@@ -477,7 +485,7 @@ def args_process():
     parser = argparse.ArgumentParser(description="Process two input paths.")
     parser.add_argument("--input", "-i", type=str, required=True, help="Path to the input directory or file")
     parser.add_argument("--output", "-o", type=str, required=True, help="Path to the output directory or file")
-
+    parser.add_argument("--presets", "-p", action="store_true", help="Prints available presets and exits")
     args = parser.parse_args()
 
     if not os.path.exists(args.input):
@@ -498,6 +506,8 @@ def create_dirs(config):
 def main():
     # Parse args
     args = args_process()
+    # Check for presets and print them before running program
+
     # Clear temp_init
     with open(osp.join(args.output, "init_log.txt"), 'w'):
         pass  # just open and close to truncate

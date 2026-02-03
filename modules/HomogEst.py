@@ -97,6 +97,7 @@ class HomogEstimator:
     def __init__(self, config):
         self.logger = logging.getLogger("HOMOG")
         self.config = config
+        self.images = []
         # Init feature extractor
         torch.set_grad_enabled(False)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -226,6 +227,7 @@ class HomogEstimator:
             # Extract frag features
             self.logger.info(f"[{idx}] Loading fragment from {frag_path}")
             frag_img = load_img(frag_path)
+            self.images = [np.asarray(ref_img.permute(1, 2, 0).cpu()), np.asarray(frag_img.permute(1, 2, 0).cpu())]
             # Match features with between ref and frag and compute homography
             H, mkpts = self.match_fragments(feats_ref, frag_img, idx)
             # If we were unable to compute homography or not enough point were match try to fix it
