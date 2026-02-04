@@ -137,6 +137,7 @@ class StitchApp():
             self.logger.info(f"[{f_idx}]    Warping with estimated homography")
             warped_fragment, frag_mask = self.stitcher.warp_image(homog_frag, frag_path, res=self.process_HW)
 
+
             # Debug output
             if self.debug:
                 homog_blender.add_fragment(warped_fragment, frag_mask)
@@ -153,6 +154,14 @@ class StitchApp():
             flow = np.array(cv.resize(flow, (self.config.final_res[1],self.config.final_res[0]), cv.INTER_LINEAR), dtype=np.float16)
             warped_fragment, frag_mask = self.stitcher.warp_image(homog_frag, frag_path)
             # Images for debug output
+            if self.config.metrics.calculate:
+                os.makedirs(f"./metrics/{self.config.exp_name}/light_adjusted", exist_ok=True)
+                np.save(f"./metrics/{self.config.exp_name}/light_adjusted/frag_{f_idx}", warped_fragment)
+                np.save(f"./metrics/{self.config.exp_name}/light_adjusted/mask_{f_idx}", frag_mask)
+                self.lo_frag_paths[f_idx] = [f"./metrics/{self.config.exp_name}/light_adjusted/frag_{f_idx}",
+                                             f"./metrics/{self.config.exp_name}/light_adjusted/mask_{f_idx}"]
+
+
             if self.debug:
                 cv.imwrite(f"./plots/warped_{f_idx}.jpg", warped_fragment)
 
@@ -179,13 +188,6 @@ class StitchApp():
             light_adjusted, _ = self.run_light_equal(self.ref_path, flow_fragment, frag_mask, resize=False)
             del flow_fragment
 
-            if self.config.metrics.calculate:
-                os.makedirs(f"./metrics/{self.config.exp_name}/light_adjusted", exist_ok=True)
-                np.save(f"./metrics/{self.config.exp_name}/light_adjusted/frag_{f_idx}", light_adjusted)
-                np.save(f"./metrics/{self.config.exp_name}/light_adjusted/mask_{f_idx}", frag_mask)
-                self.lo_frag_paths[f_idx] = [f"./metrics/{self.config.exp_name}/light_adjusted/frag_{f_idx}",
-                                        f"./metrics/{self.config.exp_name}/light_adjusted/mask_{f_idx}"]
-
 
             self.logger.info(f"Fragment {f_idx} adding to final blend")
             prog_blend.add_fragment(light_adjusted, frag_mask, homog_frag, f_idx)
@@ -207,11 +209,11 @@ class StitchApp():
 
         if self.config.metrics.calculate:
             np.save(f"./metrics/{self.config.exp_name}/final_img", final_img)
-            np.save(f"./metrics/{self.config.exp_name}/cand_bits", prog_blend.cand_bits)
-            with open(f"./metrics/{self.config.exp_name}/lo_frag_paths.pkl", "wb") as f:
-                pickle.dump(self.lo_frag_paths, f)
-
-            self.cif_image_tiles(final_img, (50, 50), prog_blend.cand_bits)
+        #     np.save(f"./metrics/{self.config.exp_name}/cand_bits", prog_blend.cand_bits)
+        #     with open(f"./metrics/{self.config.exp_name}/lo_frag_paths.pkl", "wb") as f:
+        #         pickle.dump(self.lo_frag_paths, f)
+        #
+        #     self.cif_image_tiles(final_img, (50, 50), prog_blend.cand_bits)
 
 
 
@@ -610,7 +612,7 @@ def compose_configs(args):
 
     # Load default config
     logger.info(f"Loading default config from configs/presets/default.yaml")
-    default_cfg = OmegaConf.load("configs/default.yaml")
+    default_cfg = OmegaConf.load("configs/presets/default.yaml")
     OmegaConf.set_struct(default_cfg, False)
 
     # Load preset if not specified load p_normal

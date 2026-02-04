@@ -2,6 +2,10 @@ debug: True # To output global debug values
 exp_name: name_not_specified # Used for saving partial outputs
 preset_name: default
 
+
+metrics:
+  calculate: False
+
 # Default values
 proc_res: 6000
 relative_scale: 10
