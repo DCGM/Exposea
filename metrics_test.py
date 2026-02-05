@@ -4,6 +4,8 @@ import os.path as osp
 import argparse
 import shutil
 
+import pyiqa as iqa
+
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import subprocess
 
@@ -27,6 +29,463 @@ from utils.rectangularize import clip, order_points
 from utils.utils import scale_homog
 
 import gc
+
+
+import torch
+import torch.nn.functional as F
+
+def align_affine_and_light_torch(
+    ref, src,
+    mask_ref=None,
+    iters=400,
+    lr=5e-2,
+    rotation_max_deg=15.0,
+    shear_max=0.1,
+    scale_min=0.75,
+    scale_max=1.25,
+    robust_charb_eps=1e-3,
+    device=None,
+):
+    """
+    Jointly optimize affine alignment + global light (gain/bias) in PyTorch.
+
+    Model:
+        warp: affine (src -> ref coords) via grid_sample
+        light: per-channel gain/bias: src_adj = a * src_warp + b
+
+    Inputs
+    ------
+    ref, src : torch.Tensor or numpy array
+        Shape (H,W), (H,W,C), (C,H,W), (1,C,H,W) etc. Converted internally to (1,C,H,W).
+        Recommended value range: float in [0,1] or [0,255] (either works; optimization is easier if normalized).
+    mask_ref : optional mask in ref coords
+        Shape (H,W) or broadcastable. 1 = include in loss.
+    Returns
+    -------
+    src_adj : (H,W,C) float tensor on CPU
+        Warped + photometrically adjusted source in ref frame.
+    valid_mask : (H,W) uint8 tensor on CPU
+        1 where warped pixels are valid (inside source image) AND mask_ref (if provided).
+    params : dict
+        theta (2x3), a (C,), b (C,)
+    """
+
+    # --------------------------
+    # Helpers: shape to BCHW
+    # --------------------------
+    def to_bchw(x):
+        x = torch.as_tensor(x)
+        if x.ndim == 2:              # H W
+            x = x[None, None, ...]
+        elif x.ndim == 3:
+            if x.shape[0] in (1, 3, 4):   # C H W
+                x = x[None, ...]
+            else:                         # H W C
+                x = x.permute(2, 0, 1)[None, ...]
+        elif x.ndim == 4:
+            pass
+        else:
+            raise ValueError(f"Unsupported shape: {tuple(x.shape)}")
+        return x
+
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    ref = to_bchw(ref).float().to(device)
+    src = to_bchw(src).float().to(device)
+
+    if ref.shape[0] != 1 or src.shape[0] != 1:
+        raise ValueError("This helper expects batch size 1 (it returns a single aligned image).")
+
+    _, C, H, W = ref.shape
+    if src.shape[1] != C:
+        # If you pass grayscale + color etc., force both to grayscale
+        if C != 1:
+            ref = ref.mean(dim=1, keepdim=True)
+            C = 1
+        if src.shape[1] != 1:
+            src = src.mean(dim=1, keepdim=True)
+
+    # Optional mask in ref coords
+    if mask_ref is None:
+        mask_ref_t = torch.ones((1, 1, H, W), device=device)
+    else:
+        mask_ref_t = to_bchw(mask_ref).float().to(device)
+        if mask_ref_t.shape[-2:] != (H, W):
+            raise ValueError("mask_ref must have same H,W as ref")
+        mask_ref_t = (mask_ref_t > 0).float()
+
+    # Normalize (helps optimization)
+    # (Keeps relative intensities; also fine to remove if you work in 0..1 already)
+    ref_n = (ref - ref.mean(dim=(-2,-1), keepdim=True)) / (ref.std(dim=(-2,-1), keepdim=True) + 1e-6)
+    src_n = (src - src.mean(dim=(-2,-1), keepdim=True)) / (src.std(dim=(-2,-1), keepdim=True) + 1e-6)
+
+    # --------------------------
+    # Parameterization with bounds
+    # --------------------------
+    # We parametrize a "near-similarity + small shear" affine:
+    # A = R(theta) @ S(sx, sy) @ Sh(sh)
+    # translation in normalized coords (tx, ty) in [-1,1]
+    #
+    # Use unconstrained vars u and map with tanh/sigmoid to bounds.
+    rot_max = torch.tensor(rotation_max_deg * 3.1415926535 / 180.0, device=device)
+
+    u_theta = torch.zeros((), device=device, requires_grad=True)
+    u_tx    = torch.zeros((), device=device, requires_grad=True)
+    u_ty    = torch.zeros((), device=device, requires_grad=True)
+    u_sx    = torch.zeros((), device=device, requires_grad=True)
+    u_sy    = torch.zeros((), device=device, requires_grad=True)
+    u_sh    = torch.zeros((), device=device, requires_grad=True)
+
+    # Per-channel light
+    u_a = torch.zeros((C,), device=device, requires_grad=True)   # mapped to positive
+    u_b = torch.zeros((C,), device=device, requires_grad=True)   # bias free
+
+    def build_theta():
+        theta = torch.tanh(u_theta) * rot_max
+        tx = torch.tanh(u_tx)   # normalized translation in [-1,1]
+        ty = torch.tanh(u_ty)
+
+        # scale in [scale_min, scale_max]
+        sx = scale_min + (scale_max - scale_min) * torch.sigmoid(u_sx)
+        sy = scale_min + (scale_max - scale_min) * torch.sigmoid(u_sy)
+
+        # shear in [-shear_max, shear_max]
+        sh = torch.tanh(u_sh) * shear_max
+
+        c = torch.cos(theta)
+        s = torch.sin(theta)
+
+        # R
+        R = torch.stack([
+            torch.stack([c, -s]),
+            torch.stack([s,  c]),
+        ])  # 2x2
+
+        # S
+        S = torch.diag(torch.stack([sx, sy]))  # 2x2
+
+        # Shear (x += sh*y)
+        Sh = torch.stack([
+            torch.stack([torch.tensor(1.0, device=device), sh]),
+            torch.stack([torch.tensor(0.0, device=device), torch.tensor(1.0, device=device)]),
+        ])  # 2x2
+
+        A = R @ S @ Sh  # 2x2
+
+        # Convert to 2x3 theta for affine_grid: maps ref grid -> src sampling grid
+        # Important convention:
+        # - affine_grid(theta) produces a grid in source coords (normalized) for each output pixel
+        # - grid_sample samples src at those coords to create output aligned to ref
+        #
+        # So theta should map output (ref) normalized coords to input (src) normalized coords.
+        M = torch.zeros((2,3), device=device)
+        M[:2,:2] = A
+        M[0,2] = tx
+        M[1,2] = ty
+        return M
+
+    def light_params():
+        # gain positive, centered around 1
+        a = torch.exp(u_a)  # >0
+        b = u_b
+        return a, b
+
+    # Precompute a ones mask to get valid overlap from grid_sample
+    ones_src = torch.ones((1, 1, src.shape[2], src.shape[3]), device=device)
+
+    opt = torch.optim.Adam([u_theta,u_tx,u_ty,u_sx,u_sy,u_sh,u_a,u_b], lr=lr)
+
+    for _ in range(iters):
+        theta = build_theta()[None, ...]  # 1x2x3
+
+        grid = F.affine_grid(theta, size=(1, C, H, W), align_corners=False)
+
+        # Warp src and also warp a ones-mask to detect valid samples
+        src_w = F.grid_sample(src_n, grid, mode="bilinear", padding_mode="zeros", align_corners=False)
+        valid = F.grid_sample(ones_src, grid, mode="nearest", padding_mode="zeros", align_corners=False)
+
+        a, b = light_params()
+        a_ = a.view(1, C, 1, 1)
+        b_ = b.view(1, C, 1, 1)
+        src_w_adj = a_ * src_w + b_
+
+        # Charbonnier robust loss on overlap
+        w = (valid > 0.5).float() * mask_ref_t
+        diff = ref_n - src_w_adj
+        loss_map = torch.sqrt(diff * diff + robust_charb_eps * robust_charb_eps)
+
+        loss = (loss_map * w).sum() / (w.sum() + 1e-6)
+
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        opt.step()
+
+    # Final outputs computed on original (non-normalized) src
+    with torch.no_grad():
+        theta = build_theta()[None, ...]
+        grid = F.affine_grid(theta, size=(1, C, H, W), align_corners=False)
+
+        src_w = F.grid_sample(src, grid, mode="bilinear", padding_mode="zeros", align_corners=False)
+        valid = F.grid_sample(ones_src, grid, mode="nearest", padding_mode="zeros", align_corners=False)
+
+        a, b = light_params()
+        src_adj = a.view(1,C,1,1) * src_w + b.view(1,C,1,1)
+
+        w = ((valid > 0.5).float() * mask_ref_t)
+        valid_mask = (w[0,0] > 0.5).to(torch.uint8)
+
+        # return HWC on CPU for convenience
+        out = src_adj[0].permute(1,2,0).cpu() if C > 1 else src_adj[0,0].cpu()
+
+        params = {
+            "theta_2x3": build_theta().detach().cpu(),
+            "a": a.detach().cpu(),
+            "b": b.detach().cpu(),
+        }
+
+    return out, valid_mask.cpu(), params
+
+import torch
+import torch.nn.functional as F
+
+def align_affine_with_closedform_light_lbfgs(
+    ref, src,
+    mask_ref=None,
+    iters=80,
+    lr=1.0,
+    rotation_max_deg=5.0,
+    shear_max=0.02,
+    scale_min=0.9,
+    scale_max=1.1,
+    charb_eps=1e-3,
+    eps=1e-6,
+    device=None,
+):
+    """
+    Align src -> ref with restricted affine. Lighting is solved in closed form each iteration:
+        src_adj = a * src_w + b   (a,b per-channel)
+    Returns adjusted warped src, valid mask, and params (theta, a, b).
+    """
+
+    def to_bchw(x):
+        x = torch.as_tensor(x)
+        if x.ndim == 2:              # H W
+            x = x[None, None]
+        elif x.ndim == 3:
+            if x.shape[0] in (1, 3, 4):     # C H W
+                x = x[None]
+            else:                            # H W C
+                x = x.permute(2, 0, 1)[None]
+        elif x.ndim == 4:
+            pass
+        else:
+            raise ValueError(f"Unsupported shape: {tuple(x.shape)}")
+        return x
+
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    ref = to_bchw(ref).float().to(device)
+    src = to_bchw(src).float().to(device)
+
+    if ref.shape[0] != 1 or src.shape[0] != 1:
+        raise ValueError("Batch size must be 1 for this helper.")
+
+    _, C, H, W = ref.shape
+
+    # If channel mismatch, fall back to grayscale for both
+    if src.shape[1] != C:
+        ref = ref.mean(dim=1, keepdim=True)
+        src = src.mean(dim=1, keepdim=True)
+        C = 1
+
+    if mask_ref is None:
+        mask_ref = torch.ones((1, 1, H, W), device=device)
+    else:
+        mask_ref = to_bchw(mask_ref).float().to(device)
+        mask_ref = (mask_ref > 0).float()
+
+    # Normalize for stable geometry optimization (optional but usually helps)
+    ref_n = (ref - ref.mean(dim=(-2, -1), keepdim=True)) / (ref.std(dim=(-2, -1), keepdim=True) + 1e-6)
+    src_n = (src - src.mean(dim=(-2, -1), keepdim=True)) / (src.std(dim=(-2, -1), keepdim=True) + 1e-6)
+
+    ones_src = torch.ones((1, 1, src.shape[2], src.shape[3]), device=device)
+
+    # ---- bounded parameterization for near-similarity + small shear ----
+    rot_max = rotation_max_deg * torch.pi / 180.0
+
+    u_theta = torch.zeros((), device=device, requires_grad=True)
+    u_tx    = torch.zeros((), device=device, requires_grad=True)
+    u_ty    = torch.zeros((), device=device, requires_grad=True)
+    u_sx    = torch.zeros((), device=device, requires_grad=True)
+    u_sy    = torch.zeros((), device=device, requires_grad=True)
+    u_sh    = torch.zeros((), device=device, requires_grad=True)
+
+    params = [u_theta, u_tx, u_ty, u_sx, u_sy, u_sh]
+
+    def build_theta_2x3():
+        theta = torch.tanh(u_theta) * rot_max
+        tmax = 0.5  # = 2 * 0.05
+
+        tx = torch.tanh(u_tx) * tmax
+        ty = torch.tanh(u_ty) * tmax
+
+        sx = scale_min + (scale_max - scale_min) * torch.sigmoid(u_sx)
+        sy = scale_min + (scale_max - scale_min) * torch.sigmoid(u_sy)
+        sh = torch.tanh(u_sh) * shear_max
+
+        c, s = torch.cos(theta), torch.sin(theta)
+
+        # 2x2 pieces
+        R = torch.stack([torch.stack([c, -s]),
+                         torch.stack([s,  c])])
+        S = torch.diag(torch.stack([sx, sy]))
+        Sh = torch.stack([torch.stack([torch.tensor(1.0, device=device), sh]),
+                          torch.stack([torch.tensor(0.0, device=device), torch.tensor(1.0, device=device)])])
+
+        A = R @ S @ Sh
+
+        M = torch.zeros((2, 3), device=device)
+        M[:2, :2] = A
+        M[0, 2] = tx
+        M[1, 2] = ty
+        return M
+
+    def closed_form_light(ref_img, src_warp, w):
+        """
+        Weighted least squares per-channel for y ≈ a*x + b.
+        ref_img, src_warp: (1,C,H,W), w: (1,1,H,W)
+        Returns a,b shaped (1,C,1,1)
+        """
+        w = w.clamp(0, 1)
+        wsum = w.sum(dim=(-2, -1), keepdim=True).clamp_min(eps)  # (1,1,1,1)
+
+        # Expand weights over channels
+        wc = w.expand(-1, ref_img.shape[1], -1, -1)  # (1,C,H,W)
+
+        mx = (wc * src_warp).sum(dim=(-2, -1), keepdim=True) / wsum
+        my = (wc * ref_img).sum(dim=(-2, -1), keepdim=True) / wsum
+
+        x0 = src_warp - mx
+        y0 = ref_img - my
+
+        varx = (wc * x0 * x0).sum(dim=(-2, -1), keepdim=True) / wsum
+        cov  = (wc * x0 * y0).sum(dim=(-2, -1), keepdim=True) / wsum
+
+        a = cov / (varx + eps)
+        b = my - a * mx
+        return a, b
+
+    optimizer = torch.optim.LBFGS(params, lr=lr, max_iter=iters, line_search_fn="strong_wolfe")
+
+    def closure():
+        optimizer.zero_grad(set_to_none=True)
+
+        theta = build_theta_2x3()[None]              # (1,2,3)
+        grid = F.affine_grid(theta, (1, C, H, W), align_corners=False)
+
+        src_w = F.grid_sample(src_n, grid, mode="bilinear", padding_mode="zeros", align_corners=False)
+        valid = F.grid_sample(ones_src, grid, mode="nearest", padding_mode="zeros", align_corners=False)
+
+        w = (valid > 0.5).float() * mask_ref         # (1,1,H,W)
+
+        # <-- strongest possible light fit for current warp
+        a, b = closed_form_light(ref_n, src_w, w)
+        src_adj = a * src_w + b
+
+        diff = ref_n - src_adj
+        loss_map = torch.sqrt(diff * diff + charb_eps * charb_eps)
+        loss = (loss_map * w).sum() / (w.sum() + eps)
+
+        loss.backward()
+        return loss
+
+    optimizer.step(closure)
+
+    # ---- final outputs (apply light on warped ORIGINAL src, not normalized) ----
+    with torch.no_grad():
+        theta = build_theta_2x3()[None]
+        grid = F.affine_grid(theta, (1, C, H, W), align_corners=False)
+
+        src_w = F.grid_sample(src, grid, mode="bilinear", padding_mode="zeros", align_corners=False)
+        valid = F.grid_sample(ones_src, grid, mode="nearest", padding_mode="zeros", align_corners=False)
+        w = (valid > 0.5).float() * mask_ref
+
+        # Light fit in ORIGINAL intensity space (stronger & more meaningful)
+        a, b = closed_form_light(ref, src_w, w)
+        src_adj = a * src_w + b
+
+        out = src_adj[0].permute(1, 2, 0).cpu() if C > 1 else src_adj[0, 0].cpu()
+        mask = (w[0, 0] > 0.5).to(torch.uint8).cpu()
+
+        params_out = {
+            "theta_2x3": build_theta_2x3().detach().cpu(),
+            "a": a[0, :, 0, 0].detach().cpu(),
+            "b": b[0, :, 0, 0].detach().cpu(),
+        }
+
+    return out, mask, params_out
+
+
+def photometric_fit_affine(I_ref, I_src, mask=None, eps=1e-12):
+    """
+    Fit global photometric transform: I_src' = a * I_src + b
+    minimizing squared error over mask (or all pixels).
+
+    Works for grayscale or RGB (fits per-channel if RGB).
+
+    Returns:
+      I_src_corr : corrected I_src (float32)
+      a, b       : scalars (grayscale) or shape (C,) for RGB
+    """
+    ref = np.asarray(I_ref, dtype=np.float32)
+    src = np.asarray(I_src, dtype=np.float32)
+
+    if ref.shape[:2] != src.shape[:2]:
+        raise ValueError(f"Spatial shapes must match: {ref.shape} vs {src.shape}")
+
+    if mask is None:
+        m = np.ones(ref.shape[:2], dtype=bool)
+    else:
+        m = (np.asarray(mask) > 0)
+
+    if ref.ndim == 2:
+        # grayscale
+        x = src[m].reshape(-1)
+        y = ref[m].reshape(-1)
+
+        # Solve min ||a x + b - y||^2
+        mx, my = x.mean(), y.mean()
+        vx = np.mean((x - mx) ** 2) + eps
+        cov = np.mean((x - mx) * (y - my))
+        a = cov / vx
+        b = my - a * mx
+
+        src_corr = a * src + b
+        return src_corr.astype(np.float32), float(a), float(b)
+
+    elif ref.ndim == 3:
+        C = ref.shape[2]
+        a = np.zeros(C, dtype=np.float32)
+        b = np.zeros(C, dtype=np.float32)
+        src_corr = np.empty_like(src, dtype=np.float32)
+
+        for c in range(C):
+            x = src[..., c][m].reshape(-1)
+            y = ref[..., c][m].reshape(-1)
+            mx, my = x.mean(), y.mean()
+            vx = np.mean((x - mx) ** 2) + eps
+            cov = np.mean((x - mx) * (y - my))
+            a[c] = cov / vx
+            b[c] = my - a[c] * mx
+            src_corr[..., c] = a[c] * src[..., c] + b[c]
+
+        return src_corr.astype(np.float32), a, b
+
+    else:
+        raise ValueError("I_ref/I_src must be 2D (grayscale) or 3D (H,W,C).")
+
 
 def _to_ecc_gray(img):
     """Convert input to grayscale float32 suitable for cv2.findTransformECC."""
@@ -184,18 +643,19 @@ def _process_tile_worker(args):
      debug,
      out_dir) = args
 
-    image = np.load(image_path, mmap_mode="r")
+    image = np.asarray(cv.imread(image_path, cv.IMREAD_UNCHANGED))
     tile = image[y0:y1, x0:x1]
 
     best_mse = None
     best_key = None
     best_frag_tile = None
     b_f = None
+    # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    # pi_metric = iqa.create_metric('lpips', device=device)
 
     for key, frag_path, mask_path in frag_items:
-        frag = np.load(frag_path, mmap_mode="r")
-        mask = np.load(mask_path, mmap_mode="r")
-
+        frag = np.load(frag_path)
+        mask = np.load(mask_path)
 
         m = mask[:, :, 0] if mask.ndim == 3 else mask
         if not np.all(m[y0:y1, x0:x1]):
@@ -205,27 +665,41 @@ def _process_tile_worker(args):
         #frag_tile_o = frag[y0:y1, x0:x1]
 
         #reg_tile, A, _ = align_restricted_affine(tile, frag_tile, max_deg=15, max_shear=0.06)
-        reg_tile, A = align_affine_ecc_with_init(tile, frag_tile, n_iters=200, eps=1e-6, gauss=3)
-        mse = np.square(tile - reg_tile).mean()
+        opt_tile, mask , _ = align_affine_with_closedform_light_lbfgs(tile, frag_tile)
+        opt_tile = np.asarray(opt_tile)
+        mask = np.asarray(mask)[..., None].repeat(3, axis=2)
+        # opt_tile, _, _ = photometric_fit_affine(tile, frag_tile)
+        # reg_tile, A = align_affine_ecc_with_init(tile, opt_tile, n_iters=200, eps=1e-6, gauss=3)
+
+        mse = np.square((tile - opt_tile) * mask).mean()
+        # t_tile = torch.from_numpy(tile / 255).permute(2, 0, 1).float().unsqueeze(0).to(device)
+        # t_frag = torch.from_numpy(frag_tile / 255).permute(2, 0, 1).float().unsqueeze(0).to(device)
+        # score = pi_metric(t_tile, t_frag)
+        #mse = score
+        print(mse)
 
         if best_mse is None or mse < best_mse:
             best_mse = mse
             best_key = key
             if debug:
-                best_frag_tile = reg_tile
-                b_f = frag_tile
+                best_frag_tile = opt_tile
+                b_f = opt_tile
 
-    if debug and best_mse is not None and best_mse > 30.0 and best_frag_tile is not None:
-        diff = tile - best_frag_tile
-        debug_concat = np.concatenate((tile, best_frag_tile, diff), axis=0)
+    if debug and best_mse is not None and best_mse > 0.0 and best_frag_tile is not None:
+        diff = ((np.abs(tile - best_frag_tile) ** 0.5)  / ( 255 ** 0.5)) * 255
+        debug_concat = np.concatenate((tile, best_frag_tile, diff, frag_tile), axis=0)
         out = debug_concat
         if out.dtype != np.uint8:
             out = np.clip(out, 0, 255).astype(np.uint8)
 
         os.makedirs(out_dir, exist_ok=True)
-        cv.imwrite(os.path.join(out_dir, f"tile_{y0}_{x0}_{best_key}.jpg"), out)
+        cv.imwrite(os.path.join(out_dir, f"tile_{y0}_{x0}_{best_key}_{best_mse}.jpg"), out)
 
     return (y0, x0, best_mse, best_key)
+
+def iqa_metrics():
+    print(iqa.list_models())
+
 
 class Tester:
     def __init__(self, config):
@@ -239,9 +713,10 @@ class Tester:
         final_img =  np.load(f"./metrics/{self.config.exp_name}/final_img.npy")
         with open(f"./metrics/{self.config.exp_name}/lo_frag_paths.pkl", "rb") as f:
             self.lo_frag_paths = pickle.load(f)
-        final_img_path = f"./metrics/{self.config.exp_name}/final_img.npy"
-        results = self.run_parallel_tiles_futures(final_img_path, self.lo_frag_paths, 500, 500, 12)
-        #results = self.run_single_process_tiles(final_img_path, self.lo_frag_paths, 200, 200)
+        final_img_path = f"./metrics/{self.config.exp_name}/final_stitch.png"
+        #iqa_metrics()
+        #results = self.run_parallel_tiles_futures(final_img_path, self.lo_frag_paths, 100, 100, 6)
+        results = self.run_single_process_tiles(final_img_path, self.lo_frag_paths, 200, 200)
 
     def tile_fully_in_fragment(self, mask, y0, y1, x0, x1):
         """
@@ -256,7 +731,7 @@ class Tester:
 
 
     def run_single_process_tiles(self, image_path, lo_frag_paths, th, tw):
-        image = np.load(image_path, mmap_mode="r")
+        image = np.asarray(cv.imread(image_path, cv.IMREAD_UNCHANGED))
         H, W = image.shape[:2]
 
         # Make pickleable list of fragment file paths (same format as parallel version)
@@ -266,8 +741,8 @@ class Tester:
 
         tiles = [
             (y0, min(y0 + th, H), x0, min(x0 + tw, W))
-            for y0 in range(0, H, th)
-            for x0 in range(0, W, tw)
+            for y0 in range(3500, H, th)
+            for x0 in range(17500, W, tw)
         ]
 
         out_dir = "./plots/tiles"
@@ -293,7 +768,7 @@ class Tester:
 
 
     def run_parallel_tiles_futures(self, image_path, lo_frag_paths, th, tw, max_workers=None):
-        image = np.load(image_path, mmap_mode="r")
+        image = np.asarray(cv.imread(image_path))
         H, W = image.shape[:2]
 
         # Make pickleable list of fragment file paths
