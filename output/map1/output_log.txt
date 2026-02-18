@@ -1,10 +1,38 @@
-2026-02-02 19:35:31,665 [INITIALIZE] [INFO] Loading input config from ./test_data/example1/config.yaml
-2026-02-02 19:35:31,668 [INITIALIZE] [INFO] Loading default config from configs/presets/default.yaml
-2026-02-02 19:35:31,673 [INITIALIZE] [INFO] Loading preset p_100mpx
-2026-02-02 19:35:31,677 [INITIALIZE] [INFO] Merging input cfg
-2026-02-02 19:35:31,680 [INITIALIZE] [INFO] Config:
+2026-02-16 11:01:05,265 [INITIALIZE] [INFO] Loading input config from ./test_data/example1/config.yaml
+2026-02-16 11:01:05,268 [INITIALIZE] [INFO] Loading default config from configs/presets/default.yaml
+2026-02-16 11:01:05,274 [INITIALIZE] [INFO] Loading preset p_100mpx
+2026-02-16 11:01:05,279 [INITIALIZE] [INFO] Merging input cfg
+2026-02-16 11:01:05,282 [INITIALIZE] [INFO] Config:
 {'debug': True, 'exp_name': 'map1', 'preset_name': 'p_100mpx', 'proc_res': 6000, 'relative_scale': 2, 'app': {'required_args': ['exp_name', 'img_overview', 'final_res']}, 'homog': {'type': 'default', 'feature_extractor': 'SuperPoint', 'max_feat_points': 16192, 'feature_matcher': 'LightGlue', 'do_optimization': False, 'max_matches': 200, 'min_matches': 10, 'optimizer': 'marek', 'load': None, 'save': './homogs', 'debug': False}, 'optical': {'model': 'memflow_t', 'checkpoint': 'sintel', 'input_size': [540, 960], 'patch_overlap': [40, 40], 'adjust': False, 'adjust_params': {'debug': False, 'gaus_blur_sigma': 1.0, 'subsample_factor': 2}, 'load': None, 'save': None, 'debug': True}, 'light_optim': {'grid_size': 32, 'use_tile': True, 'tile_size': [2000, 2000], 'loss_type': 'mse', 'lr': 0.1, 'steps': 50, 'mode': ['scale'], 'optimizer': 'LBFGS'}, 'stitcher': {'mode': 'actual', 'blend_width': 100, 'flow_margin': 50}, 'hydra': {'run': {'chdir': False}}, 'final_res': [4500, 6000], 'ref_name': '0.JPG', 'save_format': 'tif', 'corner_coords': [[40, 40], [0, 6399], [8399, 0], [8360, 6399]], 'metrics': {'calculate': True}}
-2026-02-02 19:35:31,680 [INITIALIZE] [INFO] Output folder: ./output/map1
-2026-02-02 19:35:31,680 [INITIALIZE] [INFO] Input folder: ./test_data/example1
-2026-02-02 19:35:31,681 [INITIALIZE] [INFO] Creating cache dirs
-2026-02-02 19:35:31,681 [INITIALIZE] [INFO] Cache dirs created
+2026-02-16 11:01:05,282 [INITIALIZE] [INFO] Output folder: ./output/map1
+2026-02-16 11:01:05,282 [INITIALIZE] [INFO] Input folder: ./test_data/example1
+2026-02-16 11:01:05,283 [INITIALIZE] [INFO] Creating cache dirs
+2026-02-16 11:01:05,283 [INITIALIZE] [INFO] Cache dirs created
+2026-02-16 11:01:05,283 [STITCHER] [INFO] Initializing STITCHER
+2026-02-16 11:01:05,283 [STITCHER] [INFO] Config:
+{'debug': True, 'exp_name': 'map1', 'preset_name': 'p_100mpx', 'proc_res': 6000, 'relative_scale': 2, 'app': {'required_args': ['exp_name', 'img_overview', 'final_res']}, 'homog': {'type': 'default', 'feature_extractor': 'SuperPoint', 'max_feat_points': 16192, 'feature_matcher': 'LightGlue', 'do_optimization': False, 'max_matches': 200, 'min_matches': 10, 'optimizer': 'marek', 'load': None, 'save': './homogs', 'debug': False}, 'optical': {'model': 'memflow_t', 'checkpoint': 'sintel', 'input_size': [540, 960], 'patch_overlap': [40, 40], 'adjust': False, 'adjust_params': {'debug': False, 'gaus_blur_sigma': 1.0, 'subsample_factor': 2}, 'load': None, 'save': None, 'debug': True}, 'light_optim': {'grid_size': 32, 'use_tile': True, 'tile_size': [2000, 2000], 'loss_type': 'mse', 'lr': 0.1, 'steps': 50, 'mode': ['scale'], 'optimizer': 'LBFGS'}, 'stitcher': {'mode': 'actual', 'blend_width': 100, 'flow_margin': 50}, 'hydra': {'run': {'chdir': False}}, 'final_res': [4500, 6000], 'ref_name': '0.JPG', 'save_format': 'tif', 'corner_coords': [[40, 40], [0, 6399], [8399, 0], [8360, 6399]], 'metrics': {'calculate': True}, 'output_folder': './output/map1', 'input_folder': './test_data/example1'}
+2026-02-16 11:01:07,245 [timm.models._builder] [INFO] Loading pretrained weights from Hugging Face hub (timm/twins_svt_large.in1k)
+2026-02-16 11:01:07,543 [httpx] [INFO] HTTP Request: HEAD https://huggingface.co/timm/twins_svt_large.in1k/resolve/main/model.safetensors "HTTP/1.1 302 Found"
+2026-02-16 11:01:07,546 [timm.models._hub] [INFO] [timm/twins_svt_large.in1k] Safe alternative available for 'pytorch_model.bin' (as 'model.safetensors'). Loading weights using safetensors.
+2026-02-16 11:01:09,172 [timm.models._builder] [INFO] Loading pretrained weights from Hugging Face hub (timm/twins_svt_large.in1k)
+2026-02-16 11:01:09,304 [httpx] [INFO] HTTP Request: HEAD https://huggingface.co/timm/twins_svt_large.in1k/resolve/main/model.safetensors "HTTP/1.1 302 Found"
+2026-02-16 11:01:09,308 [timm.models._hub] [INFO] [timm/twins_svt_large.in1k] Safe alternative available for 'pytorch_model.bin' (as 'model.safetensors'). Loading weights using safetensors.
+2026-02-16 11:01:09,558 [STITCHER] [INFO] Torch cuda True
+2026-02-16 11:01:12,433 [STITCHER] [INFO] Process Height, Width (4500, 6000) | Final Scale 1.0
+2026-02-16 11:01:12,434 [STITCHER] [INFO] Estimating homographies for 7 images
+2026-02-16 11:01:12,434 [HOMOG] [INFO] Loading reference from ./cache/ref_resized.png
+2026-02-16 11:01:13,621 [HOMOG] [INFO] REF Num. Features: 6711
+2026-02-16 11:01:13,621 [HOMOG] [INFO] [0] Loading fragment from ./test_data/example1/images/4.JPG
+2026-02-16 11:01:14,444 [HOMOG] [INFO] [0] Num. Features: 5085 | Matches 3407
+2026-02-16 11:01:14,487 [HOMOG] [INFO] [1] Loading fragment from ./test_data/example1/images/1.JPG
+2026-02-16 11:01:15,247 [HOMOG] [INFO] [1] Num. Features: 4598 | Matches 3060
+2026-02-16 11:01:15,277 [HOMOG] [INFO] [2] Loading fragment from ./test_data/example1/images/2.JPG
+2026-02-16 11:01:16,080 [HOMOG] [INFO] [2] Num. Features: 5032 | Matches 3548
+2026-02-16 11:01:16,114 [HOMOG] [INFO] [3] Loading fragment from ./test_data/example1/images/6.JPG
+2026-02-16 11:01:16,869 [HOMOG] [INFO] [3] Num. Features: 3631 | Matches 2131
+2026-02-16 11:01:16,904 [HOMOG] [INFO] [4] Loading fragment from ./test_data/example1/images/3.JPG
+2026-02-16 11:01:17,705 [HOMOG] [INFO] [4] Num. Features: 4049 | Matches 2673
+2026-02-16 11:01:17,750 [HOMOG] [INFO] [5] Loading fragment from ./test_data/example1/images/7.JPG
+2026-02-16 11:01:18,538 [HOMOG] [INFO] [5] Num. Features: 3536 | Matches 630
+2026-02-16 11:01:18,579 [HOMOG] [INFO] [6] Loading fragment from ./test_data/example1/images/5.JPG
+2026-02-16 11:01:19,348 [HOMOG] [INFO] [6] Num. Features: 3324 | Matches 1718
