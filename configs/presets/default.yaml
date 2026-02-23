@@ -2,7 +2,6 @@ debug: True # To output global debug values
 exp_name: name_not_specified # Used for saving partial outputs
 preset_name: default
 
-
 metrics:
   calculate: False
 
@@ -27,7 +26,7 @@ homog:
 
   # Preload saved homographies
   load:
-  save:
+  save: ./cache/homogs
   debug: False
 
 # Parameters regarding optical flow estimation

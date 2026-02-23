@@ -117,7 +117,7 @@ class StitchApp():
 
         self.logger.info(f"Estimating homographies for {len(self.frag_paths)} images")
         homographies = self.run_homog(resize=False)
-
+        return
         # Initialize progressive blender of fragments
         if self.debug:
             homog_blender = DebugBlender(self.process_HW, self.config)
@@ -342,6 +342,7 @@ class StitchApp():
 
             if self.config.homog.save:
                 norm_homog = {}
+                norm_homog = homographies
                 for idx, H in enumerate(homographies):
                     nH = H / H[2, 2]
                     norm_homog[self.frag_paths[idx].split('/')[-1]] = nH
