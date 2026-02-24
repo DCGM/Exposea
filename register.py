@@ -343,9 +343,8 @@ class StitchApp():
 
             if self.config.homog.save:
                 norm_homog = {}
-                norm_homog = homographies
                 for idx, H in enumerate(homographies):
-                    nH = H / H[2, 2]
+                    nH = scale_homog(H, self.final_scale)
                     norm_homog[self.frag_paths[idx].split('/')[-1]] = nH
                 os.makedirs(self.config.homog.save, exist_ok=True)
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
