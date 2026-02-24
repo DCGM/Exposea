@@ -326,7 +326,7 @@ def align_affine_with_closedform_light_lbfgs(
 
     def build_theta_2x3():
         theta = torch.tanh(u_theta) * rot_max
-        tmax = 0.5  # = 2 * 0.05
+        tmax = 0.3 # = 2 * 0.05
 
         tx = torch.tanh(u_tx) * tmax
         ty = torch.tanh(u_ty) * tmax
