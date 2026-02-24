@@ -117,7 +117,7 @@ class StitchApp():
 
         self.logger.info(f"Estimating homographies for {len(self.frag_paths)} images")
         homographies = self.run_homog(resize=False)
-
+        return
         # Initialize progressive blender of fragments
         if self.debug:
             homog_blender = DebugBlender(self.process_HW, self.config)
@@ -134,6 +134,7 @@ class StitchApp():
             #######################################
             # Apply the homography
             homog_frag = homographies[f_idx]
+
             self.logger.info(f"[{f_idx}]    Warping with estimated homography")
             warped_fragment, frag_mask = self.stitcher.warp_image(homog_frag, frag_path, res=self.process_HW)
 
@@ -341,10 +342,15 @@ class StitchApp():
             # self.frag_paths = [val for idx, val in enumerate(self.frag_paths) if idx not in to_del]
 
             if self.config.homog.save:
+                norm_homog = {}
+                norm_homog = homographies
+                for idx, H in enumerate(homographies):
+                    nH = H / H[2, 2]
+                    norm_homog[self.frag_paths[idx].split('/')[-1]] = nH
                 os.makedirs(self.config.homog.save, exist_ok=True)
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 with open(f"cache/homogs/opt_hom_{timestamp}.pkl", "wb") as f:
-                    pickle.dump(homographies, f)
+                    pickle.dump(norm_homog, f)
 
         # Resize the homography to correct scale
         if resize:

@@ -33,6 +33,7 @@ import gc
 
 import torch
 import torch.nn.functional as F
+import pyiqa as iqa
 
 def align_affine_and_light_torch(
     ref, src,
@@ -697,26 +698,69 @@ def _process_tile_worker(args):
 
     return (y0, x0, best_mse, best_key)
 
-def iqa_metrics():
-    print(iqa.list_models())
 
+def scale_homography(H_orig, w, h, W, H):
+    """
+    Scale a homography matrix from an original reference size (w,h)
+    to a new size (W,H).
+
+    Args:
+        H_orig (np.ndarray): 3x3 original homography
+        w (float): original width
+        h (float): original height
+        W (float): new width
+        H (float): new height
+
+    Returns:
+        np.ndarray: 3x3 scaled homography
+    """
+    # compute scale factors
+    sx = W / w
+    sy = H / h
+
+    # scale matrices
+    S_toNew = np.array([
+        [sx,  0,  0],
+        [ 0, sy,  0],
+        [ 0,  0,  1]
+    ])
+
+    S_toOld = np.array([
+        [1/sx,    0,   0],
+        [   0, 1/sy,   0],
+        [   0,    0,   1]
+    ])
+
+    # apply scaling
+    H_scaled = S_toNew @ H_orig @ S_toOld
+
+    # normalize so bottom-right = 1 for stability
+    if H_scaled[2,2] != 0:
+        H_scaled /= H_scaled[2,2]
+
+    return H_scaled
 
 class Tester:
     def __init__(self, config):
         self.debug = True
         self.config = config
+        self.roi = {'minH': 7100, 'maxH': 8100, 'minW': 0, 'maxW': 500}
+        self.brisque = iqa.create_metric("brisque", device='cuda')
+
 
     def run(self):
 
 
         os.makedirs('./plots/tiles', exist_ok=True)
-        final_img =  np.load(f"./metrics/{self.config.exp_name}/final_img.npy")
-        with open(f"./metrics/{self.config.exp_name}/lo_frag_paths.pkl", "rb") as f:
-            self.lo_frag_paths = pickle.load(f)
-        final_img_path = f"./metrics/{self.config.exp_name}/final_stitch.png"
+        #final_img =  np.load(f"./metrics/{self.config.exp_name}/final_img.npy")
+        final_img_path = f'metrics/polokoule/final_stitch.png'
+        with open(f"metrics/polokoule/homog.pkl", "rb") as f:
+            self.homog = pickle.load(f)
+        self.frag_paths = os.listdir(f"metrics/polokoule/images")
         #iqa_metrics()
+
         #results = self.run_parallel_tiles_futures(final_img_path, self.lo_frag_paths, 100, 100, 6)
-        results = self.run_single_process_tiles(final_img_path, self.lo_frag_paths, 200, 200)
+        results = self.run_single_process_tiles(final_img_path, self.frag_paths, 200, 200)
 
     def tile_fully_in_fragment(self, mask, y0, y1, x0, x1):
         """
@@ -727,6 +771,34 @@ class Tester:
 
         tile = mask[y0:y1, x0:x1]
         return np.all(tile)
+
+    def iqa_metrics(self, args, homog):
+
+        (y0, y1, x0, x1,
+         image_path,
+         frag_paths,  # list of (key, frag_path, mask_path)
+         debug,
+         out_dir) = args
+
+        image = np.asarray(cv.imread(image_path, cv.IMREAD_UNCHANGED))
+        tile = image[y0:y1, x0:x1]
+        tile_torch = torch.from_numpy(tile).unsqueeze(0).float()
+        self.brisque()
+
+
+        # del image
+        #
+        # for idx, frag_path in enumerate(frag_paths):
+        #     frag_homog = homog[idx]
+        #     warped_fragment, frag_mask = self.stitcher.warp_image(frag_homog, frag_path)
+        #
+        #     m = frag_mask[:, :, 0] if frag_mask.ndim == 3 else frag_mask
+        #     if not np.all(m[y0:y1, x0:x1]):
+        #         continue
+        #
+        #     frag_tile = warped_fragment[y0:y1, x0:x1]
+
+
 
 
 
@@ -741,8 +813,8 @@ class Tester:
 
         tiles = [
             (y0, min(y0 + th, H), x0, min(x0 + tw, W))
-            for y0 in range(3500, H, th)
-            for x0 in range(17500, W, tw)
+            for y0 in range(self.roi['minH'], self.roi['maxH'], th)
+            for x0 in range(self.roi['minW'], self.roi['maxW'], tw)
         ]
 
         out_dir = "./plots/tiles"
@@ -755,7 +827,8 @@ class Tester:
 
         results = []
         for t in tasks:
-            results.append(_process_tile_worker(t))
+            #results.append(_process_tile_worker(t))
+            self.iqa_metrics(t)
 
         results.sort(key=lambda r: (r[0], r[1]))
         for (y0, x0, best_mse, best_key) in results:

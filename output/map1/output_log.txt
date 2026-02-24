@@ -1,10 +1,10 @@
-2026-02-02 19:35:31,665 [INITIALIZE] [INFO] Loading input config from ./test_data/example1/config.yaml
-2026-02-02 19:35:31,668 [INITIALIZE] [INFO] Loading default config from configs/presets/default.yaml
-2026-02-02 19:35:31,673 [INITIALIZE] [INFO] Loading preset p_100mpx
-2026-02-02 19:35:31,677 [INITIALIZE] [INFO] Merging input cfg
-2026-02-02 19:35:31,680 [INITIALIZE] [INFO] Config:
-{'debug': True, 'exp_name': 'map1', 'preset_name': 'p_100mpx', 'proc_res': 6000, 'relative_scale': 2, 'app': {'required_args': ['exp_name', 'img_overview', 'final_res']}, 'homog': {'type': 'default', 'feature_extractor': 'SuperPoint', 'max_feat_points': 16192, 'feature_matcher': 'LightGlue', 'do_optimization': False, 'max_matches': 200, 'min_matches': 10, 'optimizer': 'marek', 'load': None, 'save': './homogs', 'debug': False}, 'optical': {'model': 'memflow_t', 'checkpoint': 'sintel', 'input_size': [540, 960], 'patch_overlap': [40, 40], 'adjust': False, 'adjust_params': {'debug': False, 'gaus_blur_sigma': 1.0, 'subsample_factor': 2}, 'load': None, 'save': None, 'debug': True}, 'light_optim': {'grid_size': 32, 'use_tile': True, 'tile_size': [2000, 2000], 'loss_type': 'mse', 'lr': 0.1, 'steps': 50, 'mode': ['scale'], 'optimizer': 'LBFGS'}, 'stitcher': {'mode': 'actual', 'blend_width': 100, 'flow_margin': 50}, 'hydra': {'run': {'chdir': False}}, 'final_res': [4500, 6000], 'ref_name': '0.JPG', 'save_format': 'tif', 'corner_coords': [[40, 40], [0, 6399], [8399, 0], [8360, 6399]], 'metrics': {'calculate': True}}
-2026-02-02 19:35:31,680 [INITIALIZE] [INFO] Output folder: ./output/map1
-2026-02-02 19:35:31,680 [INITIALIZE] [INFO] Input folder: ./test_data/example1
-2026-02-02 19:35:31,681 [INITIALIZE] [INFO] Creating cache dirs
-2026-02-02 19:35:31,681 [INITIALIZE] [INFO] Cache dirs created
+2026-02-23 19:30:07,587 [INITIALIZE] [INFO] Loading input config from ./test_data/example1/config.yaml
+2026-02-23 19:30:07,615 [INITIALIZE] [INFO] Loading default config from configs/presets/default.yaml
+2026-02-23 19:30:07,659 [INITIALIZE] [INFO] Loading preset p_100mpx
+2026-02-23 19:30:07,677 [INITIALIZE] [INFO] Merging input cfg
+2026-02-23 19:30:07,692 [INITIALIZE] [INFO] Config:
+{'debug': True, 'exp_name': 'map1', 'preset_name': 'p_100mpx', 'metrics': {'calculate': True}, 'proc_res': 6000, 'relative_scale': 2, 'app': {'required_args': ['exp_name', 'img_overview', 'final_res']}, 'homog': {'type': 'default', 'feature_extractor': 'SuperPoint', 'max_feat_points': 16192, 'feature_matcher': 'LightGlue', 'do_optimization': False, 'max_matches': 200, 'min_matches': 10, 'optimizer': 'marek', 'load': None, 'save': './homogs', 'debug': False}, 'optical': {'model': 'memflow_t', 'checkpoint': 'sintel', 'input_size': [540, 960], 'patch_overlap': [40, 40], 'adjust': False, 'adjust_params': {'debug': False, 'gaus_blur_sigma': 1.0, 'subsample_factor': 2}, 'load': None, 'save': None, 'debug': True}, 'light_optim': {'grid_size': 32, 'use_tile': True, 'tile_size': [2000, 2000], 'loss_type': 'mse', 'lr': 0.1, 'steps': 50, 'mode': ['color_scale'], 'optimizer': 'LBFGS'}, 'stitcher': {'mode': 'actual', 'blend_width': 100, 'flow_margin': 50}, 'hydra': {'run': {'chdir': False}}, 'final_res': [13500, 18000], 'ref_name': '0.JPG', 'save_format': 'tif', 'corner_coords': [[40, 40], [0, 6399], [8399, 0], [8360, 6399]]}
+2026-02-23 19:30:07,693 [INITIALIZE] [INFO] Output folder: ./output/map1
+2026-02-23 19:30:07,694 [INITIALIZE] [INFO] Input folder: ./test_data/example1
+2026-02-23 19:30:07,695 [INITIALIZE] [INFO] Creating cache dirs
+2026-02-23 19:30:07,695 [INITIALIZE] [INFO] Cache dirs created
