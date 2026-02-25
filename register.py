@@ -144,14 +144,14 @@ class StitchApp():
                 cv.imwrite(f"./plots/homog_{f_idx}.jpg", homog_blender.get_current_blend())
 
             # Estimate optical flow
-            _, flow = self.run_flow(self.ref_resized_path, warped_fragment, osp.basename(frag_path))
+            #_, flow = self.run_flow(self.ref_resized_path, warped_fragment, osp.basename(frag_path))
 
             # Processing in final resolution
             #######################################
             self.logger.info(f"[{f_idx}]  Scaling flow by {self.final_scale}")
             homog_frag = scale_homog(homog_frag, self.final_scale)
-            flow *= self.final_scale
-            flow = np.array(cv.resize(flow, (self.config.final_res[1],self.config.final_res[0]), cv.INTER_LINEAR), dtype=np.float16)
+           # flow *= self.final_scale
+          #  flow = np.array(cv.resize(flow, (self.config.final_res[1],self.config.final_res[0]), cv.INTER_LINEAR), dtype=np.float16)
             warped_fragment, frag_mask = self.stitcher.warp_image(homog_frag, frag_path)
             # Images for debug output
             if self.config.metrics.calculate:
@@ -161,6 +161,7 @@ class StitchApp():
                 self.lo_frag_paths[f_idx] = [f"./metrics/{self.config.exp_name}/light_adjusted/frag_{f_idx}",
                                              f"./metrics/{self.config.exp_name}/light_adjusted/mask_{f_idx}"]
 
+            continue
 
             if self.debug:
                 cv.imwrite(f"./plots/warped_{f_idx}.jpg", warped_fragment)
@@ -209,11 +210,11 @@ class StitchApp():
 
         if self.config.metrics.calculate:
             np.save(f"./metrics/{self.config.exp_name}/final_img", final_img)
-        #     np.save(f"./metrics/{self.config.exp_name}/cand_bits", prog_blend.cand_bits)
-        #     with open(f"./metrics/{self.config.exp_name}/lo_frag_paths.pkl", "wb") as f:
-        #         pickle.dump(self.lo_frag_paths, f)
-        #
-        #     self.cif_image_tiles(final_img, (50, 50), prog_blend.cand_bits)
+            np.save(f"./metrics/{self.config.exp_name}/cand_bits", prog_blend.cand_bits)
+            with open(f"./metrics/{self.config.exp_name}/lo_frag_paths.pkl", "wb") as f:
+                 pickle.dump(self.lo_frag_paths, f)
+
+      #       self.cif_image_tiles(final_img, (50, 50), prog_blend.cand_bits)
 
 
 
@@ -337,13 +338,12 @@ class StitchApp():
             # The img paths is sent to load the images in correct format for feature extraction and matching
             # homographies, _ , to_del = self.homog_estimator.match(self.ref_resized_path, self.frag_paths)
             homographies, _, to_del = self.homog_estimator.register(self.ref_resized_path, self.frag_paths)
-           # self.frag_paths = [val for idx, val in enumerate(self.frag_paths) if idx not in to_del]
+            # self.frag_paths = [val for idx, val in enumerate(self.frag_paths) if idx not in to_del]
 
             if self.config.homog.save:
                 norm_homog = {}
-                norm_homog = homographies
                 for idx, H in enumerate(homographies):
-                    nH = H / H[2, 2]
+                    nH = scale_homog(H, self.final_scale)
                     norm_homog[self.frag_paths[idx].split('/')[-1]] = nH
                 os.makedirs(self.config.homog.save, exist_ok=True)
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

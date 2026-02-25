@@ -327,7 +327,7 @@ def align_affine_with_closedform_light_lbfgs(
 
     def build_theta_2x3():
         theta = torch.tanh(u_theta) * rot_max
-        tmax = 0.5  # = 2 * 0.05
+        tmax = 0.3 # = 2 * 0.05
 
         tx = torch.tanh(u_tx) * tmax
         ty = torch.tanh(u_ty) * tmax
@@ -427,6 +427,176 @@ def align_affine_with_closedform_light_lbfgs(
         }
 
     return out, mask, params_out
+
+
+
+def align_affine_with_gradient_mse_lbfgs(
+    ref, src,
+    mask_ref=None,
+    iters=80,
+    rotation_max_deg=10.0,
+    shear_max=0.13,
+    scale_min=0.9,
+    scale_max=1.1,
+    device=None,
+):
+    """
+    Align src -> ref using restricted affine.
+    Optimization is done on Sobel image gradients.
+    Loss = MSE between gradient fields.
+
+    Returns:
+        warped_src (H,W,C or H,W),
+        valid_mask (H,W),
+        theta_2x3 (2x3),
+        gradient_mse (float)
+    """
+
+    def to_bchw(x):
+        x = torch.as_tensor(x)
+        if x.ndim == 2:
+            x = x[None, None]
+        elif x.ndim == 3:
+            if x.shape[0] in (1, 3, 4):  # CHW
+                x = x[None]
+            else:  # HWC
+                x = x.permute(2, 0, 1)[None]
+        return x
+
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    ref = to_bchw(ref).float().to(device)
+    src = to_bchw(src).float().to(device)
+
+    _, C, H, W = ref.shape
+
+    if src.shape[1] != C:
+        ref = ref.mean(dim=1, keepdim=True)
+        src = src.mean(dim=1, keepdim=True)
+        C = 1
+
+    if mask_ref is None:
+        mask_ref = torch.ones((1, 1, H, W), device=device)
+    else:
+        mask_ref = to_bchw(mask_ref).float().to(device)
+        mask_ref = (mask_ref > 0).float()
+
+    # -------------------------
+    # Sobel gradients
+    # -------------------------
+    sobel_x = torch.tensor(
+        [[-1, 0, 1],
+         [-2, 0, 2],
+         [-1, 0, 1]], dtype=torch.float32, device=device
+    )[None, None] / 8.0
+
+    sobel_y = torch.tensor(
+        [[-1, -2, -1],
+         [ 0,  0,  0],
+         [ 1,  2,  1]], dtype=torch.float32, device=device
+    )[None, None] / 8.0
+
+    def gradients(img):
+        gx = F.conv2d(img, sobel_x.repeat(C,1,1,1), padding=1, groups=C)
+        gy = F.conv2d(img, sobel_y.repeat(C,1,1,1), padding=1, groups=C)
+        return gx, gy
+
+    ref_gx, ref_gy = gradients(ref)
+
+    # -------------------------
+    # Affine parameters
+    # -------------------------
+    rot_max = rotation_max_deg * torch.pi / 180.0
+
+    u_theta = torch.zeros((), device=device, requires_grad=True)
+    u_tx    = torch.zeros((), device=device, requires_grad=True)
+    u_ty    = torch.zeros((), device=device, requires_grad=True)
+    u_sx    = torch.zeros((), device=device, requires_grad=True)
+    u_sy    = torch.zeros((), device=device, requires_grad=True)
+    u_sh    = torch.zeros((), device=device, requires_grad=True)
+
+    params = [u_theta, u_tx, u_ty, u_sx, u_sy, u_sh]
+
+    def build_theta():
+        theta = torch.tanh(u_theta) * rot_max
+        tmax = 0.3
+
+        tx = torch.tanh(u_tx) * tmax
+        ty = torch.tanh(u_ty) * tmax
+
+        sx = scale_min + (scale_max - scale_min) * torch.sigmoid(u_sx)
+        sy = scale_min + (scale_max - scale_min) * torch.sigmoid(u_sy)
+        sh = torch.tanh(u_sh) * shear_max
+
+        c, s = torch.cos(theta), torch.sin(theta)
+
+        R = torch.stack([
+            torch.stack([c, -s]),
+            torch.stack([s,  c])
+        ])
+
+        S = torch.diag(torch.stack([sx, sy]))
+
+        Sh = torch.stack([
+            torch.stack([torch.tensor(1.0, device=device), sh]),
+            torch.stack([torch.tensor(0.0, device=device), torch.tensor(1.0, device=device)])
+        ])
+
+        A = R @ S @ Sh
+
+        M = torch.zeros((1, 2, 3), device=device)
+        M[0, :2, :2] = A
+        M[0, 0, 2] = tx
+        M[0, 1, 2] = ty
+        return M
+
+    optimizer = torch.optim.LBFGS(params, max_iter=iters, line_search_fn="strong_wolfe")
+
+    # -------------------------
+    # Optimization
+    # -------------------------
+    def closure():
+        optimizer.zero_grad()
+
+        theta = build_theta()
+        grid = F.affine_grid(theta, size=ref.shape, align_corners=False)
+        src_w = F.grid_sample(src, grid, align_corners=False)
+
+        src_gx, src_gy = gradients(src_w)
+
+        valid = mask_ref
+
+        diff_x = (ref_gx - src_gx) * valid
+        diff_y = (ref_gy - src_gy) * valid
+
+        loss = (diff_x.pow(2).mean() + diff_y.pow(2).mean())
+        loss.backward()
+        return loss
+
+    optimizer.step(closure)
+
+    # -------------------------
+    # Final evaluation
+    # -------------------------
+    with torch.no_grad():
+        theta = build_theta()
+        grid = F.affine_grid(theta, size=ref.shape, align_corners=False)
+        warped = F.grid_sample(src, grid, align_corners=False)
+
+        src_gx, src_gy = gradients(warped)
+
+        valid = mask_ref
+        diff_x = (ref_gx - src_gx) * valid
+        diff_y = (ref_gy - src_gy) * valid
+
+        grad_mse = (diff_x.pow(2).mean() + diff_y.pow(2).mean()).item()
+
+        valid_mask = F.grid_sample(
+            torch.ones_like(src[:, :1]), grid, align_corners=False
+        )
+
+    return warped.squeeze().permute((1,2,0)).cpu().numpy(), valid_mask.squeeze().cpu().numpy(),theta.squeeze().cpu().numpy(), grad_mse
 
 
 def photometric_fit_affine(I_ref, I_src, mask=None, eps=1e-12):
@@ -633,6 +803,38 @@ def align_affine_ecc_with_init(I_ref, I_src, n_iters=200, eps=1e-6, gauss=3):
     )
     return aligned, warp
 
+
+def gradients_rgb(img):
+    """
+    img: (1, 3, H, W)
+    returns:
+        gx, gy  -> (1, 3, H, W)
+    """
+    img = torch.from_numpy(img).permute(2, 0, 1).float().unsqueeze(0) / 255
+    sobel_x = torch.tensor(
+        [[-1, 0, 1],
+         [-2, 0, 2],
+         [-1, 0, 1]],
+        dtype=torch.float32,
+        device=img.device
+    )[None, None] / 8.0
+
+    sobel_y = torch.tensor(
+        [[-1, -2, -1],
+         [ 0,  0,  0],
+         [ 1,  2,  1]],
+        dtype=torch.float32,
+        device=img.device
+    )[None, None] / 8.0
+
+    C = img.shape[1]
+
+    gx = F.conv2d(img, sobel_x.repeat(C,1,1,1), padding=1, groups=C)
+    gy = F.conv2d(img, sobel_y.repeat(C,1,1,1), padding=1, groups=C)
+    gx = gx.squeeze().permute((1,2,0)).cpu().numpy()
+    gy = gy.squeeze().permute((1,2,0)).cpu().numpy()
+    return gx, gy
+
 def _process_tile_worker(args):
     """
     Pickleable multiprocessing worker.
@@ -645,7 +847,20 @@ def _process_tile_worker(args):
      out_dir) = args
 
     image = np.asarray(cv.imread(image_path, cv.IMREAD_UNCHANGED))
-    tile = image[y0:y1, x0:x1]
+    H, W = image.shape[:2]
+    # padded region for alignment
+    py0 = max(0, y0 - 100)
+    py1 = min(y1 + 100, H)
+    px0 = max(0, x0 - 100)
+    px1 = min(x1 + 100, W)
+
+    tile_padded = image[py0:py1, px0:px1]
+
+    # coordinates of NON-PADDED tile inside padded tile
+    inner_y0 = y0 - py0
+    inner_y1 = inner_y0 + (y1 - y0)
+    inner_x0 = x0 - px0
+    inner_x1 = inner_x0 + (x1 - x0)
 
     best_mse = None
     best_key = None
@@ -654,25 +869,40 @@ def _process_tile_worker(args):
     # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     # pi_metric = iqa.create_metric('lpips', device=device)
 
-    for key, frag_path, mask_path in frag_items:
-        frag = np.load(frag_path)
-        mask = np.load(mask_path)
+    for key, frag, mask in frag_items:
 
         m = mask[:, :, 0] if mask.ndim == 3 else mask
         if not np.all(m[y0:y1, x0:x1]):
             continue
 
-        frag_tile = frag[y0:y1, x0:x1]
+        frag_tile_padded = frag[py0:py1, px0:px1]
         #frag_tile_o = frag[y0:y1, x0:x1]
 
         #reg_tile, A, _ = align_restricted_affine(tile, frag_tile, max_deg=15, max_shear=0.06)
-        opt_tile, mask , _ = align_affine_with_closedform_light_lbfgs(tile, frag_tile)
+        opt_tile, mask , _, grad_mse = align_affine_with_gradient_mse_lbfgs(tile_padded, frag_tile_padded)
         opt_tile = np.asarray(opt_tile)
         mask = np.asarray(mask)[..., None].repeat(3, axis=2)
+
+        # ---- CROP BACK TO NON-PADDED TILE ----
+        tile = tile_padded[inner_y0:inner_y1, inner_x0:inner_x1]
+        opt_tile_padded = opt_tile
+        opt_tile = opt_tile[inner_y0:inner_y1, inner_x0:inner_x1]
+        mask = mask[inner_y0:inner_y1, inner_x0:inner_x1]
+
+
+        ref_gx, ref_gy = gradients_rgb(tile)
+        src_gx, src_gy = gradients_rgb(opt_tile)
+
+        diff_x = (ref_gx - src_gx) * mask
+        diff_y = (ref_gy - src_gy) * mask
+
+        grad_mse = (np.pow(diff_x,2).mean() + np.pow(diff_y, 2).mean())
+
+
         # opt_tile, _, _ = photometric_fit_affine(tile, frag_tile)
         # reg_tile, A = align_affine_ecc_with_init(tile, opt_tile, n_iters=200, eps=1e-6, gauss=3)
 
-        mse = np.square((tile - opt_tile) * mask).mean()
+        mse = grad_mse
         # t_tile = torch.from_numpy(tile / 255).permute(2, 0, 1).float().unsqueeze(0).to(device)
         # t_frag = torch.from_numpy(frag_tile / 255).permute(2, 0, 1).float().unsqueeze(0).to(device)
         # score = pi_metric(t_tile, t_frag)
@@ -683,20 +913,22 @@ def _process_tile_worker(args):
             best_mse = mse
             best_key = key
             if debug:
-                best_frag_tile = opt_tile
+                best_frag_opt = opt_tile
+                best_frag =
                 b_f = opt_tile
 
     if debug and best_mse is not None and best_mse > 0.0 and best_frag_tile is not None:
         diff = ((np.abs(tile - best_frag_tile) ** 0.5)  / ( 255 ** 0.5)) * 255
-        debug_concat = np.concatenate((tile, best_frag_tile, diff, frag_tile), axis=0)
+                    debug_concat = np.concatenate((tile, frag[py0:py1, px0:px1], `opt_tile`), axis=0)
         out = debug_concat
         if out.dtype != np.uint8:
             out = np.clip(out, 0, 255).astype(np.uint8)
 
         os.makedirs(out_dir, exist_ok=True)
-        cv.imwrite(os.path.join(out_dir, f"tile_{y0}_{x0}_{best_key}_{best_mse}.jpg"), out)
+        cv.imwrite(os.path.join(out_dir, f"tile_{y0}_{x0}_{best_key}_{best_mse*1000:.3f}.jpg"), out)
 
     return (y0, x0, best_mse, best_key)
+
 
 
 def scale_homography(H_orig, w, h, W, H):
@@ -744,9 +976,53 @@ class Tester:
     def __init__(self, config):
         self.debug = True
         self.config = config
-        self.roi = {'minH': 7100, 'maxH': 8100, 'minW': 0, 'maxW': 500}
+        self.roi = {'minH': 7100, 'maxH': 8100, 'minW': 0, 'maxW': 5500}
         self.brisque = iqa.create_metric("brisque", device='cuda')
 
+    def warp_image(self, homography, frag_path, res=None):
+        """
+        Warp the given image fragment using a homography matrix.
+
+        This function applies a homography transformation to warp an image fragment
+        into a specific coordinate space. The resulting warped image and a corresponding
+        mask are returned. The mask indicates valid regions within the warped image.
+        If no resolution is provided, the function uses the default final resolution
+        from configuration, otherwise it uses the specified resolution.
+
+        Parameters:
+            homography: numpy.ndarray
+                A 3x3 homography matrix for warping the image.
+            frag_path: str
+                The path to the image fragment to be warped.
+            res: tuple[int, int], optional
+                The target resolution (height, width) for the warped image. Defaults to None.
+
+        Returns:
+            tuple[numpy.ndarray, numpy.ndarray]
+                The warped image as a numpy array and its corresponding mask.
+        """
+        # Get the corner of the final image
+
+        x_min, y_min = (0, 0)
+        if res is None:
+            x_max, y_max = (self.config.final_res[1], self.config.final_res[0])
+        else:
+            x_max, y_max = (res[1], res[0])
+        # Compute translation homography to shift images to positive coordinates
+        translation = np.array([[1, 0, -x_min], [0, 1, -y_min], [0, 0, 1]])
+
+        # Load fragment
+        fragment = cv.imread(frag_path).astype(np.float32)
+        masking_array = np.ones_like(fragment, np.uint8)
+        # Calculate the homography
+        H = translation @ homography
+        # Apply warping based on homography
+        warped = cv.warpPerspective(fragment, H, (x_max - x_min, y_max - y_min))
+        mask = cv.warpPerspective(masking_array, H, (x_max - x_min, y_max - y_min))
+        # Mask
+        mask = (mask > 0)
+
+        return warped, mask
 
     def run(self):
 
@@ -756,11 +1032,17 @@ class Tester:
         final_img_path = f'metrics/polokoule/final_stitch.png'
         with open(f"metrics/polokoule/homog.pkl", "rb") as f:
             self.homog = pickle.load(f)
-        self.frag_paths = os.listdir(f"metrics/polokoule/images")
+        self.frag_names = os.listdir(f"{self.config.input_folder}/images")
         #iqa_metrics()
 
+        self.warped_frags = {}
+        for frag_n in self.frag_names:
+            if frag_n == self.config.ref_name: continue
+            frag_h = self.homog[frag_n]
+            frag_warped, mask = self.warp_image(frag_h, f"{self.config.input_folder}/images/{frag_n}")
+            self.warped_frags[frag_n] = (frag_warped, mask)
         #results = self.run_parallel_tiles_futures(final_img_path, self.lo_frag_paths, 100, 100, 6)
-        results = self.run_single_process_tiles(final_img_path, self.frag_paths, 200, 200)
+        results = self.run_single_process_tiles(final_img_path, self.warped_frags, 200, 200)
 
     def tile_fully_in_fragment(self, mask, y0, y1, x0, x1):
         """
@@ -802,15 +1084,16 @@ class Tester:
 
 
 
-    def run_single_process_tiles(self, image_path, lo_frag_paths, th, tw):
+    def run_single_process_tiles(self, image_path, warped_frags, th, tw):
         image = np.asarray(cv.imread(image_path, cv.IMREAD_UNCHANGED))
         H, W = image.shape[:2]
 
         # Make pickleable list of fragment file paths (same format as parallel version)
         frag_items = []
-        for key, val in lo_frag_paths.items():
-            frag_items.append((key, f"{val[0]}.npy", f"{val[1]}.npy"))
+        for key, val in warped_frags.items():
+            frag_items.append((key, val[0], val[1]))
 
+        #self.roi = {'minH': 0, 'maxH': H, 'minW': 0, 'maxW': W}
         tiles = [
             (y0, min(y0 + th, H), x0, min(x0 + tw, W))
             for y0 in range(self.roi['minH'], self.roi['maxH'], th)
@@ -827,8 +1110,8 @@ class Tester:
 
         results = []
         for t in tasks:
-            #results.append(_process_tile_worker(t))
-            self.iqa_metrics(t)
+            results.append(_process_tile_worker(t))
+            #self.iqa_metrics(t)
 
         results.sort(key=lambda r: (r[0], r[1]))
         for (y0, x0, best_mse, best_key) in results:
