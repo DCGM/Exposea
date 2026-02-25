@@ -1,4 +1,5 @@
 import cv2
+from kornia.feature import LoFTR
 from lightglue.utils import load_image, rbd
 import cv2 as cv
 import os
@@ -6,16 +7,16 @@ import sys
 from lightglue import viz2d
 from typing_extensions import override
 
+
 from utils.homography_optimalizer import *
 from lightglue import LightGlue, SuperPoint
-
-
-
 import torch
 
 from torchvision.transforms import v2
 import logging
-import kornia.feature as KF
+
+from vismatch import get_matcher
+from vismatch.viz import plot_matches
 
 def load_imgs(img_paths):
     # Load images in super point and light glue format
@@ -124,11 +125,33 @@ class HomogEstimator:
         # Init feature extractor
         torch.set_grad_enabled(False)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.kornia = False
         if self.config.homog.feature_matcher == 'LightGlue':
             self.extractor = SuperPoint(max_num_keypoints=config.homog.max_feat_points).eval().to(self.device)
             # Init feature matcher
             self.matcher = LightGlue(features="superpoint",depth_confidence=-1,
             width_confidence=-1).eval().to(self.device)
+
+        elif self.config.homog.feature_matcher == 'dedode-lightglue':
+            self.kornia = True
+            self.extractor = None
+            self.matcher = get_matcher('dedode-lightglue', device="cuda")
+
+        elif self.config.homog.feature_matcher == 'rdd-lightglue':
+            self.kornia = True
+            self.extractor = None
+            self.matcher = get_matcher('rdd-lightglue', device='cuda')
+
+        elif self.config.homog.feature_matcher == 'omniglue':
+            self.kornia = True
+            self.extractor = None
+            self.matcher = get_matcher('omniglue', device="cpu")
+
+
+        elif self.config.homog.feature_matcher == 'loftr':
+            self.kornia = True
+            self.extractor = None
+            self.matcher = get_matcher('eloftr', device="cuda")
         else:
             raise NotImplementedError
         # Init optimizer
@@ -195,7 +218,7 @@ class HomogEstimator:
 
         return frag_img
 
-    def retry_matching(self, feats_ref, frag_path,):
+    def retry_matching(self, feats_ref, frag_path, ref_img=None):
         """
         Retries computing the matching between a reference feature set and a fragment
         image multiple times with different scale adjustments. If enough matches are
@@ -221,10 +244,20 @@ class HomogEstimator:
         H, mkpts = None, None
         scale_modifiers = [1, -1, 2, -2, 4, -4]
         for scale_modifier in scale_modifiers:
-            frag_img = load_image(frag_path)
-            frag_img = self.match_details(frag_img, adjust_scale=scale_modifier)
-            feats_frag = self.extractor.extract(frag_img.to(self.device))
-            matches_a_b = self.matcher({"image0": feats_ref, "image1": feats_frag})
+            if self.extractor is not None:
+                frag_img = load_image(frag_path)
+                frag_img = self.match_details(frag_img, adjust_scale=scale_modifier)
+                feats_frag = self.extractor.extract(frag_img.to(self.device))
+                matches_a_b = self.matcher({"image0": feats_ref, "image1": feats_frag})
+
+            else:
+                frag_img = self.matcher.load_image(frag_path)
+                frag_img = self.match_details(frag_img)
+                self.images = [np.asarray(ref_img.permute(1, 2, 0).cpu()), np.asarray(frag_img.permute(1, 2, 0).cpu())]
+                results = self.matcher(ref_img, frag_img)
+                H = results["H"]
+                mkpts = [results["matched_kpts0"], results["matched_kpts1"]]
+
             if matches_a_b['matches'][0].shape[0] > self.config.homog.min_matches:
                 H, _, mkpts = self.get_homography(feats_ref, feats_frag, matches_a_b, (0, -1))
                 break
@@ -254,6 +287,7 @@ class HomogEstimator:
 
         # Match features with reference
         matches_a_b = self.matcher({"image0": feats_ref, "image1": feats_frag})
+
         self.logger.info(
             f"[{idx}] Num. Features: {feats_frag['keypoints'].shape[1]} | Matches {matches_a_b['matches'][0].shape[0]}")
 
@@ -282,27 +316,45 @@ class HomogEstimator:
         """
         # Get ref img
         self.logger.info(f"Loading reference from {ref_path}")
-        ref_img = load_image(ref_path)
+
 
         # Extract features
-        feats_ref = self.extractor.extract(ref_img.to(self.device))
-        self.logger.info(f"REF Num. Features: {feats_ref['keypoints'].shape[1]}")
+        if self.extractor is not None:
+            ref_img = load_image(ref_path)
+            feats_ref = self.extractor.extract(ref_img.to(self.device))
+            self.logger.info(f"REF Num. Features: {feats_ref['keypoints'].shape[1]}")
+        else:
+            ref_img = self.matcher.load_image(ref_path, resize=512)
 
         # Iterate over fragments and estimate homography
         homographies, corrs, to_del = [], [], []
         for idx, frag_path in enumerate(frag_paths):
             # Extract frag features
             self.logger.info(f"[{idx}] Loading fragment from {frag_path}")
-            frag_img = load_img(frag_path)
 
-            self.images = [np.asarray(ref_img.permute(1, 2, 0).cpu()), np.asarray(frag_img.permute(1, 2, 0).cpu())]
-            # Match features with between ref and frag and compute homography
-            H, mkpts = self.match_fragments(feats_ref, frag_img, idx)
+            if self.extractor is not None:
+                frag_img = load_img(frag_path)
+                self.images = [np.asarray(ref_img.permute(1, 2, 0).cpu()), np.asarray(frag_img.permute(1, 2, 0).cpu())]
+                # Match features with between ref and frag and compute homography
+                H, mkpts = self.match_fragments(feats_ref, frag_img, idx)
+                # If we were unable to compute homography or not enough point were match try to fix it
+                if H is None or mkpts[0].shape[0] < self.config.homog.min_matches:
+                    self.logger.warning(f"Autofix | Matcher was unable to estimate homography trying simple autofix")
+                    H, mkpts = self.retry_matching(feats_ref, frag_path)
+            else:
+                frag_img = self.matcher.load_image(frag_path,resize=512)
+                frag_img = self.match_details(frag_img)
+                self.images = [np.asarray(ref_img.permute(1, 2, 0).cpu()), np.asarray(frag_img.permute(1, 2, 0).cpu())]
+                results = self.matcher(ref_img, frag_img)
 
-            # If we were unable to compute homography or not enough point were match try to fix it
-            if H is None or mkpts[0].shape[0] < self.config.homog.min_matches:
-                self.logger.warning(f"Autofix | Matcher was unable to estimate homography trying simple autofix")
-                H, mkpts = self.retry_matching(feats_ref, frag_path)
+
+                H = results["H"]
+                mkpts = [results["matched_kpts0"], results["matched_kpts1"]]
+                if H is None or mkpts[0].shape[0] < self.config.homog.min_matches:
+                    self.logger.warning(f"Autofix | Matcher was unable to estimate homography trying simple autofix")
+                    H, mkpts = self.retry_matching(feats_ref, frag_path, ref_img=ref_img)
+
+
 
             # If we fail to estimate homography after simple autofix performed than dont use that fragment
             if H is None:

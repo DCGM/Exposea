@@ -16,5 +16,6 @@ memory-profiler
 numpy<2
 opencv-python==4.10.0.84
 tifffile
+vismatch
 
 lightglue @ git+https://github.com/cvg/LightGlue.git@v0.2

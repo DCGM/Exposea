@@ -117,7 +117,6 @@ class StitchApp():
 
         self.logger.info(f"Estimating homographies for {len(self.frag_paths)} images")
         homographies = self.run_homog(resize=False)
-        return
         # Initialize progressive blender of fragments
         if self.debug:
             homog_blender = DebugBlender(self.process_HW, self.config)
@@ -471,7 +470,6 @@ class StitchApp():
         corner_coords = list(self.config.corner_coords)
         ordered_coords = order_points(np.array(corner_coords))
 
-        #ref_img = clip(ref_img, ordered_coords)
 
         pts_dst = np.array([
             [0, 0],
@@ -480,11 +478,16 @@ class StitchApp():
             [0, height - 1]
         ], dtype=np.float32)
 
+
+        print(f'name: {self.config.exp_name} ')
+        print(f"    reference_corner_coords: {[[int(h), int(w)] for w, h in list(ordered_coords)]} # [[H,W],...]")
+        print(f"    final_res: {self.config.final_res} # H x W ")
+
         M = cv2.getPerspectiveTransform(ordered_coords, pts_dst)
         warped = cv2.warpPerspective(ref_img, M, (width, height), flags=cv2.INTER_CUBIC)
-
-        path = f"./cache/ref_rect.png"
+        path = f"./cache/LR_reference_rect.png"
         cv.imwrite(path, warped)
+
         self.ref_path = path
 
     def calc_process_params(self):
