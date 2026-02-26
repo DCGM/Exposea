@@ -27,7 +27,7 @@ homog:
   # Preload saved homographies
   load:
   save: ./cache/homogs
-  debug: False
+  debug: True
 
 # Parameters regarding optical flow estimation
 optical:

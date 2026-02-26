@@ -15,7 +15,7 @@ import torch
 from torchvision.transforms import v2
 import logging
 
-from vismatch import get_matcher
+from vismatch import get_matcher, available_models
 from vismatch.viz import plot_matches
 
 def load_imgs(img_paths):
@@ -126,11 +126,24 @@ class HomogEstimator:
         torch.set_grad_enabled(False)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.kornia = False
+        self.ransac_conf: float = 0.95
+        self.ransac_reproj_thresh: float = 3
+
+        if hasattr(config, "eval_res"):
+            self.resize = config.eval_res
+        else:
+            self.resize = None
+
         if self.config.homog.feature_matcher == 'LightGlue':
             self.extractor = SuperPoint(max_num_keypoints=config.homog.max_feat_points).eval().to(self.device)
             # Init feature matcher
             self.matcher = LightGlue(features="superpoint",depth_confidence=-1,
             width_confidence=-1).eval().to(self.device)
+
+        elif self.config.homog.feature_matcher == 'superpoint-lightglue':
+            self.kornia = True
+            self.extractor = None
+            self.matcher = get_matcher('superpoint-lightglue', device="cuda")
 
         elif self.config.homog.feature_matcher == 'dedode-lightglue':
             self.kornia = True
@@ -147,11 +160,24 @@ class HomogEstimator:
             self.extractor = None
             self.matcher = get_matcher('omniglue', device="cpu")
 
-
         elif self.config.homog.feature_matcher == 'loftr':
             self.kornia = True
             self.extractor = None
             self.matcher = get_matcher('eloftr', device="cuda")
+
+        elif self.config.homog.feature_matcher == 'xfeat':
+            self.kornia = True
+            self.extractor = None
+            self.matcher = get_matcher('xfeat', device="cuda")
+
+        elif self.config.homog.feature_matcher == 'roma':
+            self.kornia = True
+            self.extractor = None
+            self.matcher = get_matcher('roma', device="cuda")
+
+        elif self.config.homog.feature_matcher in available_models:
+            self.extractor = None
+            self.matcher = get_matcher(self.config.homog.feature_matcher, device="cuda")
         else:
             raise NotImplementedError
         # Init optimizer
@@ -249,19 +275,55 @@ class HomogEstimator:
                 frag_img = self.match_details(frag_img, adjust_scale=scale_modifier)
                 feats_frag = self.extractor.extract(frag_img.to(self.device))
                 matches_a_b = self.matcher({"image0": feats_ref, "image1": feats_frag})
-
-            else:
-                frag_img = self.matcher.load_image(frag_path)
-                frag_img = self.match_details(frag_img)
-                self.images = [np.asarray(ref_img.permute(1, 2, 0).cpu()), np.asarray(frag_img.permute(1, 2, 0).cpu())]
-                results = self.matcher(ref_img, frag_img)
-                H = results["H"]
-                mkpts = [results["matched_kpts0"], results["matched_kpts1"]]
-
             if matches_a_b['matches'][0].shape[0] > self.config.homog.min_matches:
                 H, _, mkpts = self.get_homography(feats_ref, feats_frag, matches_a_b, (0, -1))
                 break
+
         return H, mkpts
+
+    def retry_match_vismatch(self, frag_path, ref_img):
+        res = None
+        scale_modifiers = [1, -1, 2, -2, 4, -4]
+        for scale_modifier in scale_modifiers:
+            frag_img = load_image(frag_path)
+            if hasattr(self.config, 'eval_res'):
+                frag_img = self.resize_cubic(frag_img, (self.resize, self.resize))
+            frag_img = self.match_details(frag_img, adjust_scale=scale_modifier)
+            self.images = [np.asarray(ref_img.permute(1, 2, 0).cpu()), np.asarray(frag_img.permute(1, 2, 0).cpu())]
+            results = self.matcher(ref_img, frag_img)
+            res = results
+            if results["matched_kpts0"].shape[0] > self.config.homog.min_matches:
+
+                break
+        return res
+
+    def resize_cubic(self, img: torch.Tensor, size):
+        """
+        Resize a torch image using bicubic interpolation.
+
+        Args:
+            img: Tensor of shape (C,H,W) or (B,C,H,W)
+            size: (new_h, new_w)
+
+        Returns:
+            Resized tensor (same dimensionality as input)
+        """
+        is_batched = img.dim() == 4
+
+        if not is_batched:
+            img = img.unsqueeze(0)  # add batch dim
+
+        resized = torch.nn.functional.interpolate(
+            img,
+            size=size,
+            mode="bicubic",
+            align_corners=False
+        )
+
+        if not is_batched:
+            resized = resized.squeeze(0)
+
+        return resized
 
     def match_fragments(self, feats_ref, frag_img, idx):
         """
@@ -318,13 +380,19 @@ class HomogEstimator:
         self.logger.info(f"Loading reference from {ref_path}")
 
 
+
         # Extract features
         if self.extractor is not None:
             ref_img = load_image(ref_path)
+            #ref_img = self.resize_cubic(ref_img, (resize, resize))
             feats_ref = self.extractor.extract(ref_img.to(self.device))
             self.logger.info(f"REF Num. Features: {feats_ref['keypoints'].shape[1]}")
         else:
-            ref_img = self.matcher.load_image(ref_path, resize=512)
+            ref_img = self.matcher.load_image(ref_path, self.resize)
+
+        self.orig_ref_size = ref_img.shape[2:]
+        if hasattr(self.config, 'eval_res'):
+            ref_img = self.resize_cubic(ref_img,(self.resize, self.resize))
 
         # Iterate over fragments and estimate homography
         homographies, corrs, to_del = [], [], []
@@ -334,6 +402,10 @@ class HomogEstimator:
 
             if self.extractor is not None:
                 frag_img = load_img(frag_path)
+                if hasattr(self.config, 'eval_res'):
+                    frag_img = self.resize_cubic(frag_img, (self.resize, self.resize))
+
+                #frag_img = self.resize_cubic(frag_img, (resize, resize))
                 self.images = [np.asarray(ref_img.permute(1, 2, 0).cpu()), np.asarray(frag_img.permute(1, 2, 0).cpu())]
                 # Match features with between ref and frag and compute homography
                 H, mkpts = self.match_fragments(feats_ref, frag_img, idx)
@@ -342,22 +414,30 @@ class HomogEstimator:
                     self.logger.warning(f"Autofix | Matcher was unable to estimate homography trying simple autofix")
                     H, mkpts = self.retry_matching(feats_ref, frag_path)
             else:
-                frag_img = self.matcher.load_image(frag_path,resize=512)
+                frag_img = self.matcher.load_image(frag_path)
+                if hasattr(self.config, 'eval_res'):
+                    frag_img = self.resize_cubic(frag_img, (self.resize, self.resize))
                 frag_img = self.match_details(frag_img)
                 self.images = [np.asarray(ref_img.permute(1, 2, 0).cpu()), np.asarray(frag_img.permute(1, 2, 0).cpu())]
                 results = self.matcher(ref_img, frag_img)
-
-
                 H = results["H"]
-                mkpts = [results["matched_kpts0"], results["matched_kpts1"]]
+                mkpts = [results["inlier_kpts0"], results["inlier_kpts1"]]
+
                 if H is None or mkpts[0].shape[0] < self.config.homog.min_matches:
                     self.logger.warning(f"Autofix | Matcher was unable to estimate homography trying simple autofix")
-                    H, mkpts = self.retry_matching(feats_ref, frag_path, ref_img=ref_img)
+                    results = self.retry_match_vismatch(frag_path, ref_img)
+                    H = results["H"]
+                    mkpts = [results["inlier_kpts0"], results["inlier_kpts1"]]
 
-
+                self.logger.info(
+                    f"[{idx}] Num. Features: {results["all_kpts0"].shape[0]} | Matches {results["inlier_kpts0"].shape[0]}")
+                if self.config.homog.debug:
+                    plot_matches(ref_img, frag_img, results, save_path=f"./plots/matches_{idx}.jpeg")
 
             # If we fail to estimate homography after simple autofix performed than dont use that fragment
             if H is None:
+                if hasattr(self.config, 'eval_res'):
+                    self.upscale_homography(H, self.orig_ref_size ,(self.resize,self.resize))
                 to_del.append(idx)
                 continue
             homographies.append(H)
@@ -415,5 +495,36 @@ class HomogEstimator:
             print("Not enough points")
             return None, None, None
 
-        H, mask = cv.findHomography(np.asarray(m_kpts2.cpu()), np.asarray(m_kpts1.cpu()), cv.RANSAC, 5.0)
+        H, mask = cv.findHomography(np.asarray(m_kpts2.cpu()), np.asarray(m_kpts1.cpu()), cv.USAC_MAGSAC, ransacReprojThreshold=self.ransac_reproj_thresh,
+                                    confidence=self.ransac_conf)
         return H, mask, (np.asarray(m_kpts2.cpu()), np.asarray(m_kpts1.cpu()))
+
+    def upscale_homography(self, H_r, orig_size, resized_size):
+        """
+        Convert homography estimated on resized image
+        to work on original resolution.
+
+        Args:
+            H_r: 3x3 homography estimated on resized image
+            orig_size: (H, W) original
+            resized_size: (H_r, W_r)
+
+        Returns:
+            H_full: homography for original resolution
+        """
+        H, W = orig_size
+        Hr, Wr = resized_size
+
+        sx = Wr / W
+        sy = Hr / H
+
+        S = np.array([
+            [sx, 0, 0],
+            [0, sy, 0],
+            [0, 0, 1]
+        ])
+
+        S_inv = np.linalg.inv(S)
+
+        H_full = S_inv @ H_r @ S
+        return H_full

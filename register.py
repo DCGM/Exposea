@@ -78,6 +78,12 @@ class StitchApp():
         # Timer
         self.run_timer, self.flow_timer, self.lo_timer = timer.Timer(), timer.Timer(), timer.Timer()
 
+    def adjust_res_for_eval(self, img):
+
+        if hasattr(self.config, 'eval_res'):
+            return cv.resize(img, (self.config.eval_res, self.config.eval_res), interpolation=cv.INTER_CUBIC)
+
+
 
     def run(self):
         """
@@ -144,14 +150,14 @@ class StitchApp():
                 cv.imwrite(f"./plots/homog_{f_idx}.jpg", homog_blender.get_current_blend())
 
             # Estimate optical flow
-            #_, flow = self.run_flow(self.ref_resized_path, warped_fragment, osp.basename(frag_path))
+            _, flow = self.run_flow(self.ref_resized_path, warped_fragment, osp.basename(frag_path))
 
             # Processing in final resolution
             #######################################
             self.logger.info(f"[{f_idx}]  Scaling flow by {self.final_scale}")
             homog_frag = scale_homog(homog_frag, self.final_scale)
-           # flow *= self.final_scale
-          #  flow = np.array(cv.resize(flow, (self.config.final_res[1],self.config.final_res[0]), cv.INTER_LINEAR), dtype=np.float16)
+            flow *= self.final_scale
+            flow = np.array(cv.resize(flow, (self.config.final_res[1],self.config.final_res[0]), cv.INTER_LINEAR), dtype=np.float16)
             warped_fragment, frag_mask = self.stitcher.warp_image(homog_frag, frag_path)
             # Images for debug output
             if self.config.metrics.calculate:
@@ -160,8 +166,6 @@ class StitchApp():
                 np.save(f"./metrics/{self.config.exp_name}/light_adjusted/mask_{f_idx}", frag_mask)
                 self.lo_frag_paths[f_idx] = [f"./metrics/{self.config.exp_name}/light_adjusted/frag_{f_idx}",
                                              f"./metrics/{self.config.exp_name}/light_adjusted/mask_{f_idx}"]
-
-            continue
 
             if self.debug:
                 cv.imwrite(f"./plots/warped_{f_idx}.jpg", warped_fragment)
@@ -347,7 +351,7 @@ class StitchApp():
                     norm_homog[self.frag_paths[idx].split('/')[-1]] = nH
                 os.makedirs(self.config.homog.save, exist_ok=True)
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                with open(f"cache/homogs/opt_hom_{timestamp}.pkl", "wb") as f:
+                with open(f"cache/homogs/H_{self.config.exp_name}_{timestamp}.pkl", "wb") as f:
                     pickle.dump(norm_homog, f)
 
         # Resize the homography to correct scale
@@ -516,6 +520,7 @@ class StitchApp():
 
         self.final_scale = target_h / process_h
         self.process_HW = (process_h, process_w)
+        # For evaluation:
         self.resize_reference(self.process_HW)
         self.logger.info(f"Process Height, Width {self.process_HW} | Final Scale {self.final_scale}")
 
@@ -624,6 +629,9 @@ def compose_configs(args):
     default_cfg = OmegaConf.load("configs/presets/default.yaml")
     OmegaConf.set_struct(default_cfg, False)
 
+    # Inser evaluation preset from cmd line
+    if hasattr(args, "eval") and args.eval is not None:
+        input_cfg.preset_name = args.eval
     # Load preset if not specified load p_normal
     if hasattr(input_cfg, "preset_name"):
         logger.info(f"Loading preset {input_cfg.preset_name}")
@@ -661,6 +669,7 @@ def args_process():
     parser.add_argument("--input", "-i", type=str, required=True, help="Path to the input directory or file")
     parser.add_argument("--output", "-o", type=str, required=True, help="Path to the output directory or file")
     parser.add_argument("--presets", "-p", action="store_true", help="Prints available presets and exits")
+    parser.add_argument("--eval", "-e", type=str, help="Eval config name in presets")
     args = parser.parse_args()
 
     if not os.path.exists(args.input):

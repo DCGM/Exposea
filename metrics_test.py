@@ -914,7 +914,7 @@ def _process_tile_worker(args):
             best_key = key
             if debug:
                 best_frag_opt = opt_tile
-                best_frag =
+                best_frag = mse
                 b_f = opt_tile
 
     if debug and best_mse is not None and best_mse > 0.0 and best_frag_tile is not None:

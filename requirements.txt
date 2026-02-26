@@ -17,5 +17,7 @@ numpy<2
 opencv-python==4.10.0.84
 tifffile
 vismatch
+tensorflow
+
 
 lightglue @ git+https://github.com/cvg/LightGlue.git@v0.2
