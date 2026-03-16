@@ -430,7 +430,7 @@ class HomogEstimator:
                     mkpts = [results["inlier_kpts0"], results["inlier_kpts1"]]
 
                 self.logger.info(
-                    f"[{idx}] Num. Features: {results["all_kpts0"].shape[0]} | Matches {results["inlier_kpts0"].shape[0]}")
+                    f"[{idx}] Num. Features: {results['all_kpts0'].shape[0]} | Matches {results['inlier_kpts0'].shape[0]}")
                 if self.config.homog.debug:
                     plot_matches(ref_img, frag_img, results, save_path=f"./plots/matches_{idx}.jpeg")
 

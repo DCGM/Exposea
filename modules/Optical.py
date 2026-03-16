@@ -486,11 +486,74 @@ class OpticalFlow:
         y_new = np.clip(y + flow[..., 1], 0, h - 1)
 
         # Warp image using remap
-        warped = cv.remap(copy.copy(image), x_new.astype(np.float32), y_new.astype(np.float32),
-                          interpolation=cv.INTER_NEAREST, borderMode=cv.BORDER_REPLICATE)
+        # warped = cv.remap(copy.copy(image), x_new.astype(np.float32), y_new.astype(np.float32),
+        #                  interpolation=cv.INTER_NEAREST, borderMode=cv.BORDER_REPLICATE)
+        warped = self.remap_tiled(image,  x_new.astype(np.float32), y_new.astype(np.float32))
+        return warped
         return warped
 
+    def remap_tiled(
+            self,
+            image,
+            map_x,
+            map_y,
+            tile_size=8192,
+            interpolation=cv.INTER_NEAREST,
+            border_mode=cv.BORDER_REPLICATE,
+    ):
+        """
+        Tiled remap equivalent to cv.remap(image, map_x, map_y, ...), but works
+        for arbitrarily large images (avoids OpenCV's 32767px limit).
+        """
 
+        H, W = image.shape[:2]
+        output = np.zeros_like(image)
+
+        # ensure float32 maps (required by cv.remap)
+        # cv.remap DOES NOT accept float64 or other dtypes
+        map_x = map_x.astype(np.float32)
+        map_y = map_y.astype(np.float32)
+
+        for y0 in range(0, H, tile_size):
+            y1 = min(y0 + tile_size, H)
+            for x0 in range(0, W, tile_size):
+                x1 = min(x0 + tile_size, W)
+
+                # extract local tile
+                sub_map_x = map_x[y0:y1, x0:x1]
+                sub_map_y = map_y[y0:y1, x0:x1]
+
+                # compute minimal input crop around the tile
+                min_x = int(np.floor(np.min(sub_map_x)))
+                min_y = int(np.floor(np.min(sub_map_y)))
+                max_x = int(np.ceil(np.max(sub_map_x)))
+                max_y = int(np.ceil(np.max(sub_map_y)))
+
+                # pad crop to cover border handling
+                pad = 1  # for nearest/replicate 1px margin
+                min_x = max(0, min_x - pad)
+                min_y = max(0, min_y - pad)
+                max_x = min(W, max_x + pad)
+                max_y = min(H, max_y + pad)
+
+                # crop source image and adjust maps
+                src_crop = image[min_y:max_y, min_x:max_x]
+
+                local_map_x = sub_map_x - min_x
+                local_map_y = sub_map_y - min_y
+
+                # tile warping
+                warped_tile = cv.remap(
+                    src_crop,
+                    local_map_x,
+                    local_map_y,
+                    interpolation=interpolation,
+                    borderMode=border_mode,
+                )
+
+                output[y0:y1, x0:x1] = warped_tile
+
+        return output
 
     def warp_image_tiled(self,image, flow, tile=4096,
                    interpolation="linear",
@@ -606,8 +669,14 @@ class OpticalFlow:
         y_new = np.clip(y + flow[..., 1], 0, h - 1)
 
         # Warp image using remap
-        warped = cv.remap(copy.copy(image), x_new.astype(np.float32), y_new.astype(np.float32),
-                          interpolation=cv.INTER_CUBIC, borderMode=cv.BORDER_REPLICATE)
+        # warped = cv.remap_tiled(copy.copy(image), x_new.astype(np.float32), y_new.astype(np.float32),
+        #                 interpolation=cv.INTER_CUBIC, borderMode=cv.BORDER_REPLICATE)
+
+        # Warp image using remap
+        # warped = cv.remap(copy.copy(image), x_new.astype(np.float32), y_new.astype(np.float32),
+        #                  interpolation=cv.INTER_NEAREST, borderMode=cv.BORDER_REPLICATE)
+        warped = self.remap_tiled(image, x_new.astype(np.float32), y_new.astype(np.float32))
+
         return warped
 
     def get_overlap_region(self, img1, img2_warped):

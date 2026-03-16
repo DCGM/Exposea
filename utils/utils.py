@@ -57,3 +57,4 @@ def scale_homog(h, scale):
     h_scaled = D @ h
     return h_scaled
 
+
