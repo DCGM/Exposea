@@ -283,8 +283,18 @@ class StitchApp():
             save_name = f"final_stitch.{self.config.save_format}"
             min_val = img.min()
             max_val = img.max()
-            rgb_norm = (img - min_val) / (max_val - min_val + 1e-8)
-            tifffile.imwrite(osp.join(self.out_dir, save_name), rgb_norm)
+
+            img_norm = (img - min_val) / (max_val - min_val + 1e-8)
+
+            # if img comes from OpenCV, convert BGR -> RGB
+            img_rgb = img_norm[..., ::-1]
+            rgb_uint16 = (img_rgb * 65535).astype(np.uint16)
+            tifffile.imwrite(
+                osp.join(self.out_dir, save_name),
+                rgb_uint16,
+                photometric='rgb',
+                bigtiff=True
+            )
             #cv.imwrite(osp.join(self.out_dir, save_name), img)
 
         else:
