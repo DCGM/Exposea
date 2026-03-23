@@ -78,6 +78,8 @@ class StitchApp():
         # Timer
         self.run_timer, self.flow_timer, self.lo_timer = timer.Timer(), timer.Timer(), timer.Timer()
 
+        self.uv_map =  np.ones((self.config.final_res[0], self.config.final_res[1], 3)) * -1
+
     def adjust_res_for_eval(self, img):
 
         if hasattr(self.config, 'eval_res'):
@@ -152,6 +154,7 @@ class StitchApp():
             # Estimate optical flow
             _, flow = self.run_flow(self.ref_resized_path, warped_fragment, osp.basename(frag_path))
 
+
             # Processing in final resolution
             #######################################
             self.logger.info(f"[{f_idx}]  Scaling flow by {self.final_scale}")
@@ -159,6 +162,11 @@ class StitchApp():
             flow *= self.final_scale
             flow = np.array(cv.resize(flow, (self.config.final_res[1],self.config.final_res[0]), cv.INTER_LINEAR), dtype=np.float16)
             warped_fragment, frag_mask = self.stitcher.warp_image(homog_frag, frag_path)
+
+            # TODO UV MAP REMOVE OR CONDITION
+            warped_coords = self.warp_coords(frag_path, homog_frag, flow)
+
+
             # Images for debug output
             if self.config.metrics.calculate:
                 os.makedirs(f"./metrics/{self.config.exp_name}/light_adjusted", exist_ok=True)
@@ -197,6 +205,14 @@ class StitchApp():
             self.logger.info(f"Fragment {f_idx} adding to final blend")
             prog_blend.add_fragment(light_adjusted, frag_mask, homog_frag, f_idx)
 
+
+            # TODO UV MAP REMOVE OR CONDITION
+            coord_mask = (prog_blend.uv_map_mask == f_idx)
+            self.uv_map[coord_mask, 0] = f_idx
+            self.uv_map[coord_mask, 1] = warped_coords[coord_mask, 0]
+            self.uv_map[coord_mask, 2] = warped_coords[coord_mask, 1]
+
+
             if self.debug:
                 peak = torch.cuda.max_memory_allocated()
                 self.logger.info(f"Peak usage: {peak / 1024 ** 2:.2f} MB")
@@ -211,7 +227,8 @@ class StitchApp():
         final_img = prog_blend.get_current_blend()
 
         self.save_final_img(final_img)
-        np.save(f"./plots/uv_map.npy", prog_blend.uv_map)
+        np.save(f"./plots/uv_map.npy", self.uv_map)
+
         if self.config.metrics.calculate:
             np.save(f"./metrics/{self.config.exp_name}/final_img", final_img)
             np.save(f"./metrics/{self.config.exp_name}/cand_bits", prog_blend.cand_bits)
@@ -226,7 +243,31 @@ class StitchApp():
         self.logger.info(f"Average Time | Light optim {self.lo_timer.average_time}")
         self.logger.info(f"Average Time | Finished stitching {self.run_timer.toc(False)}")
 
+    def warp_coords(self, frag_path, homog_frag, flow):
 
+        fragment = cv.imread(frag_path).astype(np.float32)
+        H, W = fragment.shape[:2]
+        del fragment
+        coord = self.make_coord_image(H, W)
+
+        x_max, y_max = (self.config.final_res[1], self.config.final_res[0])
+        x_min, y_min = (0, 0)
+        # Compute translation homography to shift images to positive coordinates
+        translation = np.array([[1, 0, -x_min], [0, 1, -y_min], [0, 0, 1]])
+        # Calculate the homography
+        H = translation @ homog_frag
+        # Apply warping based on homography
+        warped_coords = cv.warpPerspective(coord, H, (x_max - x_min, y_max - y_min))
+        flow_coords = self.optical.warp_image(warped_coords, flow)
+
+        return flow_coords
+
+    def make_coord_image(self, h, w, dtype=np.float32):
+        """
+        Returns an HxWx2 image where each pixel stores its source coordinates [x, y].
+        """
+        xs, ys = np.meshgrid(np.arange(w, dtype=dtype), np.arange(h, dtype=dtype))
+        return np.stack([xs, ys], axis=-1)  # HxWx2
 
     def cif_image_tiles(self, image, tile_size, cand_bits):
         def tile_fully_in_fragment(mask, y0, y1, x0, x1):

@@ -220,7 +220,7 @@ class ActualBlender:
         # Accumulator for closest value to 1 this represent the best pixel so far
         self.progressive_val_accum = np.ones(res) * 99999
         self.best_idx_acum = np.ones(res) * -1
-        self.uv_map = np.ones((res[0], res[1], 3)) * -1
+        self.uv_map_mask = np.ones(res) * -1
         # For CIF Metric
         self.coarse_size = (1000, 1000)
         self.frag_id_to_bit = {}  # fragment key -> bit index [0..N-1]
@@ -307,12 +307,9 @@ class ActualBlender:
 
         # UV Map debug
         mask_deb = (compare_idxs == 0) & shrunk_mask[:, :, 0]
-
         H, W = fragment.shape[:2]
-        yy, xx = np.indices((H, W))  # yy = rows (y), xx = cols (x)
-        self.uv_map[mask_deb, 0] = key
-        self.uv_map[mask_deb, 1] = xx[mask_deb]
-        self.uv_map[mask_deb, 2] = yy[mask_deb]
+        yy, xx = np.indices((H, W))
+        self.uv_map_mask[mask_deb] = key
 
         self.progressive_val_accum[compare_idxs == 0] = res_array[compare_idxs == 0]
         #shrunk_frag_best = cv.erode(frag_best_pixels_mask.astype(np.uint8), self.erode_kernel, iterations=1).astype(np.uint8)
