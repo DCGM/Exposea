@@ -211,7 +211,7 @@ class StitchApp():
         final_img = prog_blend.get_current_blend()
 
         self.save_final_img(final_img)
-
+        np.save(f"./plots/uv_map.npy", prog_blend.uv_map)
         if self.config.metrics.calculate:
             np.save(f"./metrics/{self.config.exp_name}/final_img", final_img)
             np.save(f"./metrics/{self.config.exp_name}/cand_bits", prog_blend.cand_bits)
