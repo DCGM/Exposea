@@ -78,7 +78,12 @@ class StitchApp():
         # Timer
         self.run_timer, self.flow_timer, self.lo_timer = timer.Timer(), timer.Timer(), timer.Timer()
 
-        self.uv_map =  np.ones((self.config.final_res[0], self.config.final_res[1], 3)) * -1
+        if hasattr(self.config, "produce_uv_map") and self.config.produce_uv_map:
+            self.uv_map_mask = np.memmap(
+                f"cache/uv_map_mask.dat",
+                dtype=np.float32,
+                mode='w+',
+                shape=(self.config.final_res[0], self.config.final_res[1], 3))
 
     def adjust_res_for_eval(self, img):
 
@@ -163,8 +168,9 @@ class StitchApp():
             flow = np.array(cv.resize(flow, (self.config.final_res[1],self.config.final_res[0]), cv.INTER_LINEAR), dtype=np.float16)
             warped_fragment, frag_mask = self.stitcher.warp_image(homog_frag, frag_path)
 
-            # TODO UV MAP REMOVE OR CONDITION
-            warped_coords = self.warp_coords(frag_path, homog_frag, flow)
+
+            if hasattr(self.config, "produce_uv_map") and self.config.produce_uv_map:
+                warped_coords = self.warp_coords(frag_path, homog_frag, flow)
 
 
             # Images for debug output
@@ -205,12 +211,11 @@ class StitchApp():
             self.logger.info(f"Fragment {f_idx} adding to final blend")
             prog_blend.add_fragment(light_adjusted, frag_mask, homog_frag, f_idx)
 
-
-            # TODO UV MAP REMOVE OR CONDITION
-            coord_mask = (prog_blend.uv_map_mask == f_idx)
-            self.uv_map[coord_mask, 0] = f_idx
-            self.uv_map[coord_mask, 1] = warped_coords[coord_mask, 0]
-            self.uv_map[coord_mask, 2] = warped_coords[coord_mask, 1]
+            if hasattr(self.config, "produce_uv_map") and self.config.produce_uv_map:
+                coord_mask = ( self.uv_map_mask[:,:,0] == f_idx)
+                self.uv_map_mask[coord_mask, 1] = warped_coords[coord_mask, 0]
+                self.uv_map_mask[coord_mask, 2] = warped_coords[coord_mask, 1]
+                self.uv_map_mask.flush()
 
 
             if self.debug:
@@ -227,7 +232,6 @@ class StitchApp():
         final_img = prog_blend.get_current_blend()
 
         self.save_final_img(final_img)
-        np.save(f"./plots/uv_map.npy", self.uv_map)
 
         if self.config.metrics.calculate:
             np.save(f"./metrics/{self.config.exp_name}/final_img", final_img)
@@ -235,13 +239,17 @@ class StitchApp():
             with open(f"./metrics/{self.config.exp_name}/lo_frag_paths.pkl", "wb") as f:
                  pickle.dump(self.lo_frag_paths, f)
 
-      #       self.cif_image_tiles(final_img, (50, 50), prog_blend.cand_bits)
-
-
 
         self.logger.info(f"Average Time | Optical flow {self.flow_timer.average_time}")
         self.logger.info(f"Average Time | Light optim {self.lo_timer.average_time}")
         self.logger.info(f"Average Time | Finished stitching {self.run_timer.toc(False)}")
+
+        del final_img, prog_blend
+
+        if hasattr(self.config, "produce_uv_map") and self.config.produce_uv_map:
+            np.save(f"{self.config.output_folder}/uv_map.npy", np.array(self.uv_map_mask))
+            print("Conversion done.")
+
 
     def warp_coords(self, frag_path, homog_frag, flow):
 
@@ -792,6 +800,7 @@ def main():
     # Run main stitcher
     app = StitchApp(config)
     app.run()
+
 
 if __name__ == "__main__":
     main()

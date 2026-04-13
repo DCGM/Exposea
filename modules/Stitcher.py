@@ -220,7 +220,15 @@ class ActualBlender:
         # Accumulator for closest value to 1 this represent the best pixel so far
         self.progressive_val_accum = np.ones(res) * 99999
         self.best_idx_acum = np.ones(res) * -1
-        self.uv_map_mask = np.ones(res) * -1
+
+        if hasattr(self.config, "produce_uv_map") and self.config.produce_uv_map:
+            self.uv_map_mask = np.memmap(
+                f"cache/uv_map_mask.dat",
+                dtype=np.float32,
+                mode='r+',
+                shape=(self.config.final_res[0], self.config.final_res[1], 3))
+            self.uv_map_mask[:] = -1
+
         # For CIF Metric
         self.coarse_size = (1000, 1000)
         self.frag_id_to_bit = {}  # fragment key -> bit index [0..N-1]
@@ -305,11 +313,14 @@ class ActualBlender:
         # frag_best_pixels_mask = (compare_idxs == 0) & shrunk_mask[:, :, 0]
         self.best_idx_acum[(compare_idxs == 0) & shrunk_mask[:, :, 0]] = key
 
-        # UV Map debug
-        mask_deb = (compare_idxs == 0) & shrunk_mask[:, :, 0]
-        H, W = fragment.shape[:2]
-        yy, xx = np.indices((H, W))
-        self.uv_map_mask[mask_deb] = key
+
+        if hasattr(self.config, "produce_uv_map") and self.config.produce_uv_map:
+            # UV Map debug
+            mask_deb = (compare_idxs == 0) & shrunk_mask[:, :, 0]
+            H, W = fragment.shape[:2]
+
+            self.uv_map_mask[mask_deb, 0] = key
+            self.uv_map_mask.flush()
 
         self.progressive_val_accum[compare_idxs == 0] = res_array[compare_idxs == 0]
         #shrunk_frag_best = cv.erode(frag_best_pixels_mask.astype(np.uint8), self.erode_kernel, iterations=1).astype(np.uint8)
