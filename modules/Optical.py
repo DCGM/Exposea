@@ -20,7 +20,8 @@ from tqdm import tqdm
 from memory_profiler import profile
 import torch.profiler
 import sys
-
+from concurrent.futures import ThreadPoolExecutor
+import threading
 
 
 class OpticalFlow:
@@ -488,10 +489,52 @@ class OpticalFlow:
         # Warp image using remap
         # warped = cv.remap(copy.copy(image), x_new.astype(np.float32), y_new.astype(np.float32),
         #                  interpolation=cv.INTER_NEAREST, borderMode=cv.BORDER_REPLICATE)
-        warped = self.remap_tiled(image,  x_new.astype(np.float32), y_new.astype(np.float32))
+        if h > 32000 or w > 32000:
+            warped = self.remap_tiled_threaded(image, x_new.astype(np.float32), y_new.astype(np.float32))
+        else:
+            warped = cv.remap(copy.copy(image), x_new.astype(np.float32), y_new.astype(np.float32),
+                              interpolation=cv.INTER_NEAREST, borderMode=cv.BORDER_REPLICATE)
         return warped
         return warped
 
+    def remap_tiled_threaded(self, image, map_x, map_y, tile_size=8192,
+                    interpolation=cv.INTER_NEAREST, border_mode=cv.BORDER_REPLICATE):
+        H, W = image.shape[:2]
+        output = np.zeros_like(image)
+
+        if map_x.dtype != np.float32:
+            map_x = map_x.astype(np.float32)
+        if map_y.dtype != np.float32:
+            map_y = map_y.astype(np.float32)
+
+        def process_tile(y0, x0):
+            y1 = min(y0 + tile_size, H)
+            x1 = min(x0 + tile_size, W)
+
+            sub_map_x = map_x[y0:y1, x0:x1]
+            sub_map_y = map_y[y0:y1, x0:x1]
+
+            min_x = max(0, int(np.floor(sub_map_x.min())) - 1)
+            min_y = max(0, int(np.floor(sub_map_y.min())) - 1)
+            max_x = min(W, int(np.ceil(sub_map_x.max())) + 1)
+            max_y = min(H, int(np.ceil(sub_map_y.max())) + 1)
+
+            src_crop = image[min_y:max_y, min_x:max_x]
+            warped_tile = cv.remap(
+                src_crop,
+                sub_map_x - min_x,
+                sub_map_y - min_y,
+                interpolation=interpolation,
+                borderMode=border_mode,
+            )
+            output[y0:y1, x0:x1] = warped_tile  # numpy slice writes are thread-safe when non-overlapping
+
+        tiles = [(y0, x0) for y0 in range(0, H, tile_size) for x0 in range(0, W, tile_size)]
+
+        with ThreadPoolExecutor() as executor:
+            executor.map(lambda t: process_tile(*t), tiles)
+
+        return output
     def remap_tiled(
             self,
             image,
@@ -511,8 +554,10 @@ class OpticalFlow:
 
         # ensure float32 maps (required by cv.remap)
         # cv.remap DOES NOT accept float64 or other dtypes
-        map_x = map_x.astype(np.float32)
-        map_y = map_y.astype(np.float32)
+        if map_x.dtype != np.float32:
+            map_x = map_x.astype(np.float32)
+        if map_y.dtype != np.float32:
+            map_y = map_y.astype(np.float32)
 
         for y0 in range(0, H, tile_size):
             y1 = min(y0 + tile_size, H)
@@ -675,7 +720,11 @@ class OpticalFlow:
         # Warp image using remap
         # warped = cv.remap(copy.copy(image), x_new.astype(np.float32), y_new.astype(np.float32),
         #                  interpolation=cv.INTER_NEAREST, borderMode=cv.BORDER_REPLICATE)
-        warped = self.remap_tiled(image, x_new.astype(np.float32), y_new.astype(np.float32))
+        if h > 32000 or w > 32000:
+            warped = self.remap_tiled_threaded(image, x_new.astype(np.float32), y_new.astype(np.float32))
+        else:
+            warped = cv.remap(copy.copy(image), x_new.astype(np.float32), y_new.astype(np.float32),
+                             interpolation=cv.INTER_NEAREST, borderMode=cv.BORDER_REPLICATE)
 
         return warped
 
