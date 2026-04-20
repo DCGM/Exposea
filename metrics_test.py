@@ -35,6 +35,247 @@ import torch
 import torch.nn.functional as F
 import pyiqa as iqa
 
+homogs_load = {
+    "_MG_1419.JPG": [
+        [
+            0.3731625447424659,
+            0.04317975537758184,
+            622.0546547651504
+        ],
+        [
+            0.03344927528514443,
+            0.4538674012331918,
+            2069.3967798086082
+        ],
+        [
+            1.080173949534511e-05,
+            2.762035179764422e-05,
+            1.0
+        ]
+    ],
+    "_MG_1422.JPG": [
+        [
+            0.4076179302136707,
+            0.031272252428011856,
+            629.7364675134943
+        ],
+        [
+            0.011202548422521705,
+            0.4456756225009057,
+            1221.3813110945664
+        ],
+        [
+            6.562611952750623e-06,
+            1.589477872595519e-05,
+            1.0
+        ]
+    ],
+    "_MG_1421.JPG": [
+        [
+            0.3034851912956536,
+            -0.008362819542691214,
+            -288.5659130375059
+        ],
+        [
+            -0.025670941993545485,
+            0.34150823434485184,
+            1398.7038492736187
+        ],
+        [
+            -1.957181311351888e-05,
+            4.454561657598697e-06,
+            1.0
+        ]
+    ],
+    "_MG_1420.JPG": [
+        [
+            0.32740409074478166,
+            0.004443185690581648,
+            -249.9011608627278
+        ],
+        [
+            -0.038877737947278494,
+            0.4150928244365802,
+            2110.2137774691546
+        ],
+        [
+            -1.5009007773228038e-05,
+            1.9456335385799693e-05,
+            1.0
+        ]
+    ],
+    "_MG_1418.JPG": [
+        [
+            0.33427604469286104,
+            0.06000389994034796,
+            1779.209902988877
+        ],
+        [
+            -0.006510889447647532,
+            0.4136316096004657,
+            2140.5362148871463
+        ],
+        [
+            -1.0477423822515044e-06,
+            2.136935742854521e-05,
+            0.9999999999999999
+        ]
+    ],
+    "_MG_1423.JPG": [
+        [
+            0.4922378523856563,
+            0.077907324838524,
+            1950.0454018943535
+        ],
+        [
+            0.03279007365965858,
+            0.5057229761179415,
+            1026.8179030269907
+        ],
+        [
+            1.7248084073017413e-05,
+            2.4924666279030792e-05,
+            1.0
+        ]
+    ],
+    "_MG_1427.JPG": [
+        [
+            0.36259692789774695,
+            0.014054445849418578,
+            19.12830660609425
+        ],
+        [
+            -0.01079379144967264,
+            0.4047982302490354,
+            529.5262763062694
+        ],
+        [
+            -7.872232382967146e-06,
+            1.0838401677953504e-05,
+            1.0
+        ]
+    ],
+    "_MG_1428.JPG": [
+        [
+            0.3362598927793117,
+            -0.006327533961672295,
+            -90.86042627440591
+        ],
+        [
+            -0.016171582569316757,
+            0.3764977125931855,
+            -113.88236316121751
+        ],
+        [
+            -2.5899441468063468e-05,
+            -1.6202645690566537e-05,
+            1.0
+        ]
+    ],
+    "_MG_1426.JPG": [
+        [
+            0.44203832571421725,
+            0.07233132145677233,
+            1428.471299343659
+        ],
+        [
+            -0.005692134561305951,
+            0.47947924376858486,
+            255.526637259425
+        ],
+        [
+            3.5899564935360664e-06,
+            2.5010222860289274e-05,
+            1.0
+        ]
+    ],
+    "_MG_1429.JPG": [
+        [
+            0.400245775173481,
+            -0.09599106286155552,
+            1498.2213846047948
+        ],
+        [
+            -0.002410021902008793,
+            0.3908121869590079,
+            -230.40170153176774
+        ],
+        [
+            9.409255220152039e-06,
+            -3.83194806400656e-05,
+            1.0
+        ]
+    ],
+    "_MG_1425.JPG": [
+        [
+            0.5309632418136042,
+            0.03395329711039305,
+            2648.7783570628258
+        ],
+        [
+            0.016272825314815026,
+            0.45250013312841714,
+            305.2275800546913
+        ],
+        [
+            2.9292267614639606e-05,
+            7.958589720825353e-06,
+            1.0
+        ]
+    ],
+    "_MG_1424.JPG": [
+        [
+            0.6107953263346391,
+            0.0858565049286378,
+            2441.003449757172
+        ],
+        [
+            0.06867721995313844,
+            0.5104648368548025,
+            1068.6563631230204
+        ],
+        [
+            4.244594168158367e-05,
+            2.1220777990136818e-05,
+            1.0
+        ]
+    ],
+    "_MG_1417.JPG": [
+        [
+            0.36660349931241276,
+            0.1346803562683601,
+            2776.720083693146
+        ],
+        [
+            0.02692987335589885,
+            0.43662284241290633,
+            2228.8264753909234
+        ],
+        [
+            1.2532544819228258e-05,
+            3.293233761400398e-05,
+            1.0
+        ]
+    ],
+    "_MG_1430.JPG": [
+        [
+            0.41014363838563533,
+            -0.12424138553187988,
+            2717.2515565755875
+        ],
+        [
+            0.010315298073201525,
+            0.3839467627121016,
+            -289.85498729922534
+        ],
+        [
+            1.2085364529696471e-05,
+            -2.940332404174554e-05,
+            1.0
+        ]
+    ]
+}
+
 def align_affine_and_light_torch(
     ref, src,
     mask_ref=None,
@@ -848,6 +1089,8 @@ def _process_tile_worker(args):
 
     image = np.asarray(cv.imread(image_path, cv.IMREAD_UNCHANGED))
     H, W = image.shape[:2]
+    image = cv.resize(image, (int(W / 2), int(H / 2)))
+    H, W = image.shape[:2]
     # padded region for alignment
     py0 = max(0, y0 - 100)
     py1 = min(y1 + 100, H)
@@ -864,7 +1107,7 @@ def _process_tile_worker(args):
 
     best_mse = None
     best_key = None
-    best_frag_tile = None
+    best_frag_opt = None
     b_f = None
     # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     # pi_metric = iqa.create_metric('lpips', device=device)
@@ -879,9 +1122,10 @@ def _process_tile_worker(args):
         #frag_tile_o = frag[y0:y1, x0:x1]
 
         #reg_tile, A, _ = align_restricted_affine(tile, frag_tile, max_deg=15, max_shear=0.06)
-        opt_tile, mask , _, grad_mse = align_affine_with_gradient_mse_lbfgs(tile_padded, frag_tile_padded)
-        opt_tile = np.asarray(opt_tile)
-        mask = np.asarray(mask)[..., None].repeat(3, axis=2)
+        # opt_tile, mask , _, grad_mse = align_affine_with_gradient_mse_lbfgs(tile_padded, frag_tile_padded)
+        # opt_tile = np.asarray(opt_tile)
+        opt_tile = frag_tile_padded
+        #mask = np.asarray(mask)[..., None].repeat(3, axis=2)
 
         # ---- CROP BACK TO NON-PADDED TILE ----
         tile = tile_padded[inner_y0:inner_y1, inner_x0:inner_x1]
@@ -890,13 +1134,18 @@ def _process_tile_worker(args):
         mask = mask[inner_y0:inner_y1, inner_x0:inner_x1]
 
 
-        ref_gx, ref_gy = gradients_rgb(tile)
-        src_gx, src_gy = gradients_rgb(opt_tile)
+        #ref_gx, ref_gy = gradients_rgb(tile)
+        #src_gx, src_gy = gradients_rgb(opt_tile)
 
-        diff_x = (ref_gx - src_gx) * mask
-        diff_y = (ref_gy - src_gy) * mask
+        #diff_x = (ref_gx - src_gx) * mask
+        #diff_y = (ref_gy - src_gy) * mask
 
-        grad_mse = (np.pow(diff_x,2).mean() + np.pow(diff_y, 2).mean())
+        fsim_iqa = iqa.create_metric('cw_ssim', device='cuda')
+
+        tile_torch = torch.from_numpy(tile / 255).permute((2, 0, 1)).unsqueeze(0).float()
+        opt_tile_torch = torch.from_numpy(opt_tile / 255).permute((2, 0, 1)).unsqueeze(0).float()
+        grad_mse = fsim_iqa(tile_torch, opt_tile_torch).cpu().item()
+        #grad_mse = (np.pow(diff_x,2).mean() + np.pow(diff_y, 2).mean())
 
 
         # opt_tile, _, _ = photometric_fit_affine(tile, frag_tile)
@@ -909,7 +1158,7 @@ def _process_tile_worker(args):
         #mse = score
         print(mse)
 
-        if best_mse is None or mse < best_mse:
+        if best_mse is None or mse > best_mse:
             best_mse = mse
             best_key = key
             if debug:
@@ -917,9 +1166,9 @@ def _process_tile_worker(args):
                 best_frag = mse
                 b_f = opt_tile
 
-    if debug and best_mse is not None and best_mse > 0.0 and best_frag_tile is not None:
-        diff = ((np.abs(tile - best_frag_tile) ** 0.5)  / ( 255 ** 0.5)) * 255
-                    debug_concat = np.concatenate((tile, frag[py0:py1, px0:px1], `opt_tile`), axis=0)
+    if debug and best_mse is not None and best_mse > 0.0 and best_frag_opt is not None:
+        diff = ((np.abs(tile - best_frag_opt) ** 0.5)  / ( 255 ** 0.5)) * 255
+        debug_concat = np.concatenate((tile, opt_tile), axis=0)
         out = debug_concat
         if out.dtype != np.uint8:
             out = np.clip(out, 0, 255).astype(np.uint8)
@@ -972,11 +1221,68 @@ def scale_homography(H_orig, w, h, W, H):
 
     return H_scaled
 
+
+def scale_homography(H_small,
+                     dst_shape_small, dst_shape_full,
+                     src_shape_small=None, src_shape_full=None):
+    """
+    Scales a homography matrix from low-res to full-res using OpenCV image shapes.
+
+    Args:
+        H_small         : 3x3 homography estimated at low resolution.
+        dst_shape_small : Tuple (height, width) of the base image at LOW resolution.
+        dst_shape_full  : Tuple (height, width) of the base image at FULL resolution.
+        src_shape_small : Tuple (height, width) of the fragment image at LOW res. (Optional)
+        src_shape_full  : Tuple (height, width) of the fragment image at FULL res. (Optional)
+
+    Returns:
+        np.ndarray: The scaled 3x3 homography matrix for full resolution.
+    """
+    # 1. Unpack shapes (OpenCV format is Height, Width)
+    dst_small_h, dst_small_w = dst_shape_small[:2]
+    dst_full_h, dst_full_w = dst_shape_full[:2]
+
+    # 2. Calculate scale factors.
+    # Remember: Width corresponds to the X-axis, Height corresponds to the Y-axis.
+    dst_scale_x = dst_full_w / dst_small_w
+    dst_scale_y = dst_full_h / dst_small_h
+
+    S_dst = np.array([
+        [dst_scale_x, 0, 0],
+        [0, dst_scale_y, 0],
+        [0, 0, 1]
+    ], dtype=np.float64)
+
+    # 3. Handle source (fragment) scaling if both shapes are provided
+    if src_shape_small is not None and src_shape_full is not None:
+        src_small_h, src_small_w = src_shape_small[:2]
+        src_full_h, src_full_w = src_shape_full[:2]
+
+        src_scale_x = src_full_w / src_small_w
+        src_scale_y = src_full_h / src_small_h
+    else:
+        src_scale_x = 1.0
+        src_scale_y = 1.0
+
+    S_src_inv = np.array([
+        [1.0 / src_scale_x, 0, 0],
+        [0, 1.0 / src_scale_y, 0],
+        [0, 0, 1]
+    ], dtype=np.float64)
+
+    # 4. Compute and normalize the full-resolution homography
+    H_full = S_dst @ H_small @ S_src_inv
+    H_full = H_full / H_full[2, 2]
+
+    return H_full
+
+
 class Tester:
     def __init__(self, config):
         self.debug = True
         self.config = config
-        self.roi = {'minH': 7100, 'maxH': 8100, 'minW': 0, 'maxW': 5500}
+        self.config.final_res = (int(self.config.final_res[0] / 2), int(self.config.final_res[1] / 2))
+        self.roi = {'minH': 0, 'maxH': 1000, 'minW': 0, 'maxW': 1000}
         self.brisque = iqa.create_metric("brisque", device='cuda')
 
     def warp_image(self, homography, frag_path, res=None):
@@ -1030,17 +1336,27 @@ class Tester:
         os.makedirs('./plots/tiles', exist_ok=True)
         #final_img =  np.load(f"./metrics/{self.config.exp_name}/final_img.npy")
         final_img_path = f'metrics/polokoule/final_stitch.png'
-        with open(f"metrics/polokoule/homog.pkl", "rb") as f:
-            self.homog = pickle.load(f)
+
         self.frag_names = os.listdir(f"{self.config.input_folder}/images")
+        self.frag_names.sort()
         #iqa_metrics()
 
         self.warped_frags = {}
         for frag_n in self.frag_names:
             if frag_n == self.config.ref_name: continue
-            frag_h = self.homog[frag_n]
+            frag_h = np.asarray(homogs_load[frag_n])
+            frag_h = scale_homography(frag_h, (3200, 4430), (self.config.final_res[0], self.config.final_res[1]))
             frag_warped, mask = self.warp_image(frag_h, f"{self.config.input_folder}/images/{frag_n}")
             self.warped_frags[frag_n] = (frag_warped, mask)
+            # cv.namedWindow("w", cv.WINDOW_NORMAL)
+            #
+            # # 2. Set the window to your desired fixed size (width, height)
+            # #    For example, 800 pixels wide and 600 pixels tall.
+            # cv.resizeWindow("w", 800, 600)
+            #
+            # # 3. Show the image in the configured window
+            # cv.imshow("w", frag_warped)
+            # cv.waitKey(0)
         #results = self.run_parallel_tiles_futures(final_img_path, self.lo_frag_paths, 100, 100, 6)
         results = self.run_single_process_tiles(final_img_path, self.warped_frags, 200, 200)
 
@@ -1086,8 +1402,8 @@ class Tester:
 
     def run_single_process_tiles(self, image_path, warped_frags, th, tw):
         image = np.asarray(cv.imread(image_path, cv.IMREAD_UNCHANGED))
+        image = cv.resize(image, (self.config.final_res[1], self.config.final_res[0]))
         H, W = image.shape[:2]
-
         # Make pickleable list of fragment file paths (same format as parallel version)
         frag_items = []
         for key, val in warped_frags.items():

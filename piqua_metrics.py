@@ -36,7 +36,7 @@ class Tester:
     def __init__(self):
         self.debug = True
         self.roi = {'minH': 7100, 'maxH': 8100, 'minW': 0, 'maxW': 500}
-        self.brisque = iqa.create_metric("topiq_nr", device='cuda')
+        self.brisque = iqa.create_metric("fsim", device='cuda')
         print(iqa.list_models())
         print(f"Is lower better: {self.brisque.lower_better}")
 
