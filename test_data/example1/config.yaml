@@ -16,6 +16,7 @@ produce_uv_map: True
 
 homog:
   save: "./homogs"
+  feature_matcher: superpoint-lightglue
 ########################################################################
 # Optional parameters here
 # All parameters present in default.yaml can be modified here

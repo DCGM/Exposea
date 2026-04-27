@@ -1168,14 +1168,15 @@ def _process_tile_worker(args):
 
     if debug and best_mse is not None and best_mse > 0.0 and best_frag_opt is not None:
         diff = ((np.abs(tile - best_frag_opt) ** 0.5)  / ( 255 ** 0.5)) * 255
-        debug_concat = np.concatenate((tile, opt_tile), axis=0)
+        debug_concat = np.concatenate((tile, best_frag_opt), axis=0)
         out = debug_concat
         if out.dtype != np.uint8:
             out = np.clip(out, 0, 255).astype(np.uint8)
 
         os.makedirs(out_dir, exist_ok=True)
-        cv.imwrite(os.path.join(out_dir, f"tile_{y0}_{x0}_{best_key}_{best_mse*1000:.3f}.jpg"), out)
-
+        cv.imwrite(os.path.join(out_dir, f"vis_comparison_{y0}_{x0}_cwis-{best_mse:.3f}.jpg"), out)
+        cv.imwrite(os.path.join(out_dir, f"stitched_{y0}_{x0}.png"), tile)
+        cv.imwrite(os.path.join(out_dir, f"frag_{y0}_{x0}.png"), best_frag_opt)
     return (y0, x0, best_mse, best_key)
 
 
@@ -1281,8 +1282,8 @@ class Tester:
     def __init__(self, config):
         self.debug = True
         self.config = config
-        self.config.final_res = (int(self.config.final_res[0] / 2), int(self.config.final_res[1] / 2))
-        self.roi = {'minH': 0, 'maxH': 1000, 'minW': 0, 'maxW': 1000}
+        self.config.final_res = (int(self.config.final_res[0] /2), int(self.config.final_res[1] /2))
+        self.roi = {'minH': int(6000 / 2), 'maxH': int(7000 /2), 'minW': int(2/2), 'maxW': int(400/2)}
         self.brisque = iqa.create_metric("brisque", device='cuda')
 
     def warp_image(self, homography, frag_path, res=None):

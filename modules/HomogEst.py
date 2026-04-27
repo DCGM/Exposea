@@ -290,7 +290,8 @@ class HomogEstimator:
                 frag_img = self.resize_cubic(frag_img, (self.resize, self.resize))
             frag_img = self.match_details(frag_img, adjust_scale=scale_modifier)
             self.images = [np.asarray(ref_img.permute(1, 2, 0).cpu()), np.asarray(frag_img.permute(1, 2, 0).cpu())]
-            results = self.matcher(ref_img, frag_img)
+            results = self.matcher(frag_img, ref_img)
+
             res = results
             if results["matched_kpts0"].shape[0] > self.config.homog.min_matches:
 
@@ -419,20 +420,37 @@ class HomogEstimator:
                     frag_img = self.resize_cubic(frag_img, (self.resize, self.resize))
                 frag_img = self.match_details(frag_img)
                 self.images = [np.asarray(ref_img.permute(1, 2, 0).cpu()), np.asarray(frag_img.permute(1, 2, 0).cpu())]
-                results = self.matcher(ref_img, frag_img)
-                H = results["H"]
-                mkpts = [results["inlier_kpts0"], results["inlier_kpts1"]]
+                results = self.matcher(frag_img, ref_img)
+                kpts_ref = results["inlier_kpts1"]
+                kpts_frag = results["inlier_kpts0"]
+                mkpts = [kpts_frag, kpts_ref]
+                H, mask = cv.findHomography(
+                    kpts_frag,
+                    kpts_ref,
+                    cv.USAC_MAGSAC,
+                    ransacReprojThreshold=self.ransac_reproj_thresh,
+                    confidence=self.ransac_conf
+                )
+                #H = np.linalg.inv(results["H"])
 
                 if H is None or mkpts[0].shape[0] < self.config.homog.min_matches:
                     self.logger.warning(f"Autofix | Matcher was unable to estimate homography trying simple autofix")
                     results = self.retry_match_vismatch(frag_path, ref_img)
-                    H = results["H"]
-                    mkpts = [results["inlier_kpts0"], results["inlier_kpts1"]]
+                    kpts_ref = results["inlier_kpts1"]
+                    kpts_frag = results["inlier_kpts0"]
+                    mkpts = [kpts_frag, kpts_ref]
+                    H, mask = cv.findHomography(
+                        kpts_frag,
+                        kpts_ref,
+                        cv.USAC_MAGSAC,
+                        ransacReprojThreshold=self.ransac_reproj_thresh,
+                        confidence=self.ransac_conf
+                    )
 
                 self.logger.info(
                     f"[{idx}] Num. Features: {results['all_kpts0'].shape[0]} | Matches {results['inlier_kpts0'].shape[0]}")
                 if self.config.homog.debug:
-                    plot_matches(ref_img, frag_img, results, save_path=f"./plots/matches_{idx}.jpeg")
+                    plot_matches(frag_img, ref_img, results, save_path=f"./plots/matches_{idx}.jpeg")
 
             # If we fail to estimate homography after simple autofix performed than dont use that fragment
             if H is None:

@@ -616,7 +616,7 @@ class StitchApp():
             raise ValueError("Overview image not found")
         if sort:
             try:
-                img_names = sorted(img_names, key=lambda x: int(x.split('.')[0]))
+                img_names = sorted(img_names)
             except ValueError:
                 self.logger.warning("Fragments cannot be sorted. Continuing without sorting")
                 img_names = img_names
