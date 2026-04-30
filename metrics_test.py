@@ -21,256 +21,417 @@ from scipy.ndimage import map_coordinates
 from scipy.optimize import least_squares
 from omegaconf import OmegaConf
 
-from modules.HomogEst import HomogEstimator
-from modules.Stitcher import Stitcher, ActualBlender, DebugBlender
-from modules.Optical import OpticalFlow
+from vismatch import get_matcher, available_models
 from modules.LightEqual import *
-from utils.rectangularize import clip, order_points
-from utils.utils import scale_homog
 
-import gc
-
-
-import torch
-import torch.nn.functional as F
 import pyiqa as iqa
 
 homogs_load = {
-    "_MG_1419.JPG": [
+    "_MG_0020.JPG": [
         [
-            0.3731625447424659,
-            0.04317975537758184,
-            622.0546547651504
+            0.3051674928006007,
+            -0.021839259540077646,
+            2460.3910230568217
         ],
         [
-            0.03344927528514443,
-            0.4538674012331918,
-            2069.3967798086082
+            0.0026592143605064524,
+            0.2883061873491069,
+            1810.9937094808458
         ],
         [
-            1.080173949534511e-05,
-            2.762035179764422e-05,
-            1.0
-        ]
-    ],
-    "_MG_1422.JPG": [
-        [
-            0.4076179302136707,
-            0.031272252428011856,
-            629.7364675134943
-        ],
-        [
-            0.011202548422521705,
-            0.4456756225009057,
-            1221.3813110945664
-        ],
-        [
-            6.562611952750623e-06,
-            1.589477872595519e-05,
-            1.0
-        ]
-    ],
-    "_MG_1421.JPG": [
-        [
-            0.3034851912956536,
-            -0.008362819542691214,
-            -288.5659130375059
-        ],
-        [
-            -0.025670941993545485,
-            0.34150823434485184,
-            1398.7038492736187
-        ],
-        [
-            -1.957181311351888e-05,
-            4.454561657598697e-06,
-            1.0
-        ]
-    ],
-    "_MG_1420.JPG": [
-        [
-            0.32740409074478166,
-            0.004443185690581648,
-            -249.9011608627278
-        ],
-        [
-            -0.038877737947278494,
-            0.4150928244365802,
-            2110.2137774691546
-        ],
-        [
-            -1.5009007773228038e-05,
-            1.9456335385799693e-05,
-            1.0
-        ]
-    ],
-    "_MG_1418.JPG": [
-        [
-            0.33427604469286104,
-            0.06000389994034796,
-            1779.209902988877
-        ],
-        [
-            -0.006510889447647532,
-            0.4136316096004657,
-            2140.5362148871463
-        ],
-        [
-            -1.0477423822515044e-06,
-            2.136935742854521e-05,
+            3.729024904616276e-06,
+            -6.824909578952642e-06,
             0.9999999999999999
         ]
     ],
-    "_MG_1423.JPG": [
+    "_MG_0012.JPG": [
         [
-            0.4922378523856563,
-            0.077907324838524,
-            1950.0454018943535
+            0.2625622682339034,
+            -0.06528745201334522,
+            2950.4198140291637
         ],
         [
-            0.03279007365965858,
-            0.5057229761179415,
-            1026.8179030269907
+            0.00531383028025891,
+            0.21985692576058227,
+            2449.329690311451
         ],
         [
-            1.7248084073017413e-05,
-            2.4924666279030792e-05,
+            1.9177498857324183e-06,
+            -1.5913775821731397e-05,
             1.0
         ]
     ],
-    "_MG_1427.JPG": [
+    "_MG_0021.JPG": [
         [
-            0.36259692789774695,
-            0.014054445849418578,
-            19.12830660609425
+            0.2939179560810929,
+            -0.04101087256990632,
+            2834.4666891045213
         ],
         [
-            -0.01079379144967264,
-            0.4047982302490354,
-            529.5262763062694
+            0.012950160019264174,
+            0.27759082555695647,
+            1769.9838232529373
         ],
         [
-            -7.872232382967146e-06,
-            1.0838401677953504e-05,
+            2.822879196150597e-06,
+            -8.259056973698237e-06,
             1.0
         ]
     ],
-    "_MG_1428.JPG": [
+    "_MG_0013.JPG": [
         [
-            0.3362598927793117,
-            -0.006327533961672295,
-            -90.86042627440591
+            0.28375458746625754,
+            -0.027247982813824255,
+            2260.303332460423
         ],
         [
-            -0.016171582569316757,
-            0.3764977125931855,
-            -113.88236316121751
+            0.0023027771202355123,
+            0.2632815663488222,
+            2339.3856064350034
         ],
         [
-            -2.5899441468063468e-05,
-            -1.6202645690566537e-05,
+            1.793141512585716e-06,
+            -7.771737030747328e-06,
             1.0
         ]
     ],
-    "_MG_1426.JPG": [
+    "_MG_0022.JPG": [
         [
-            0.44203832571421725,
-            0.07233132145677233,
-            1428.471299343659
+            0.3086719961570767,
+            -0.021649040512340758,
+            2775.901158474918
         ],
         [
-            -0.005692134561305951,
-            0.47947924376858486,
-            255.526637259425
+            0.009211515397569392,
+            0.28654671620419764,
+            1001.5001888882646
         ],
         [
-            3.5899564935360664e-06,
-            2.5010222860289274e-05,
+            6.898942662415649e-06,
+            -6.559177189296896e-06,
             1.0
         ]
     ],
-    "_MG_1429.JPG": [
+    "_MG_0023.JPG": [
         [
-            0.400245775173481,
-            -0.09599106286155552,
-            1498.2213846047948
+            0.30501233120280374,
+            -0.015600140445692093,
+            2128.198065286959
         ],
         [
-            -0.002410021902008793,
-            0.3908121869590079,
-            -230.40170153176774
+            0.011920109799723744,
+            0.28421150246370663,
+            1065.3622706515237
         ],
         [
-            9.409255220152039e-06,
-            -3.83194806400656e-05,
+            7.700530714129396e-06,
+            -5.2421927988956695e-06,
             1.0
         ]
     ],
-    "_MG_1425.JPG": [
+    "_MG_0014.JPG": [
         [
-            0.5309632418136042,
-            0.03395329711039305,
-            2648.7783570628258
+            0.2952412259915976,
+            -0.018366658145796223,
+            1345.6984358418267
         ],
         [
-            0.016272825314815026,
-            0.45250013312841714,
-            305.2275800546913
+            0.005719471955941317,
+            0.2799389139484724,
+            2288.8752047625785
         ],
         [
-            2.9292267614639606e-05,
-            7.958589720825353e-06,
+            1.2697010532199368e-06,
+            -6.3212887580719716e-06,
             1.0
         ]
     ],
-    "_MG_1424.JPG": [
+    "_MG_0019.JPG": [
         [
-            0.6107953263346391,
-            0.0858565049286378,
-            2441.003449757172
+            0.31026748215548805,
+            -0.013087880084705013,
+            1338.1962937648123
         ],
         [
-            0.06867721995313844,
-            0.5104648368548025,
-            1068.6563631230204
+            0.0065540321759976865,
+            0.3048383057328858,
+            1802.3623690041327
         ],
         [
-            4.244594168158367e-05,
-            2.1220777990136818e-05,
+            1.786711346705766e-06,
+            -3.587674528057915e-06,
             1.0
         ]
     ],
-    "_MG_1417.JPG": [
+    "_MG_0024.JPG": [
         [
-            0.36660349931241276,
-            0.1346803562683601,
-            2776.720083693146
+            0.3081292524047416,
+            0.006599436685866336,
+            1414.6457548649328
         ],
         [
-            0.02692987335589885,
-            0.43662284241290633,
-            2228.8264753909234
+            0.006875528310179501,
+            0.3191813424645024,
+            909.8346998610407
         ],
         [
-            1.2532544819228258e-05,
-            3.293233761400398e-05,
+            2.172122632162119e-06,
+            4.675394325618477e-06,
+            0.9999999999999999
+        ]
+    ],
+    "_MG_0015.JPG": [
+        [
+            0.2946770140248055,
+            -0.002332327209709087,
+            487.81412243390673
+        ],
+        [
+            -0.003773879745255663,
+            0.28980121620240906,
+            2270.169719894153
+        ],
+        [
+            -6.939356421653037e-07,
+            -4.365008938542238e-06,
             1.0
         ]
     ],
-    "_MG_1430.JPG": [
+    "_MG_0018.JPG": [
         [
-            0.41014363838563533,
-            -0.12424138553187988,
-            2717.2515565755875
+            0.30837539951673804,
+            -0.003016788157387559,
+            379.9491476617893
         ],
         [
-            0.010315298073201525,
-            0.3839467627121016,
-            -289.85498729922534
+            0.004329257809727864,
+            0.3116592653629125,
+            1754.5832550326386
         ],
         [
-            1.2085364529696471e-05,
-            -2.940332404174554e-05,
+            7.97636843521137e-07,
+            -1.7924486324033016e-06,
+            0.9999999999999999
+        ]
+    ],
+    "_MG_0017.JPG": [
+        [
+            0.3023033130963506,
+            -0.0013279254565563014,
+            -210.99096187547627
+        ],
+        [
+            -0.0007874915306779887,
+            0.30635093906737554,
+            1683.2625732397776
+        ],
+        [
+            -2.833861143650703e-07,
+            -2.8094453580201146e-06,
+            1.0
+        ]
+    ],
+    "_MG_0016.JPG": [
+        [
+            0.30622951874038945,
+            0.003354289926892207,
+            -263.9476747923451
+        ],
+        [
+            0.008770062405950147,
+            0.29785402333946,
+            2285.720945918207
+        ],
+        [
+            3.539270640188191e-06,
+            -4.57154028200895e-06,
+            1.0
+        ]
+    ],
+    "_MG_0031.JPG": [
+        [
+            0.3388382593498574,
+            0.02500181198823134,
+            2848.032656975391
+        ],
+        [
+            0.004048615559762815,
+            0.34409234026757735,
+            218.78422647994998
+        ],
+        [
+            3.164587827340057e-06,
+            6.139751202620686e-06,
+            1.0
+        ]
+    ],
+    "_MG_0030.JPG": [
+        [
+            0.32874204104263705,
+            -0.007405900280591701,
+            2089.8673358091646
+        ],
+        [
+            0.006864673992134082,
+            0.3210148817050583,
+            379.83225298106765
+        ],
+        [
+            5.0509023722009415e-06,
+            -2.6756431741652912e-06,
+            1.0
+        ]
+    ],
+    "_MG_0029.JPG": [
+        [
+            0.30999834442971635,
+            -0.013019844164403195,
+            1065.6471898853563
+        ],
+        [
+            0.0008775047963809324,
+            0.3104760663503401,
+            386.0017805405625
+        ],
+        [
+            2.835127715123473e-07,
+            -5.68183087360811e-06,
+            1.0
+        ]
+    ],
+    "_MG_0032.JPG": [
+        [
+            0.2588761834970931,
+            -0.027997553080363134,
+            2650.828460961062
+        ],
+        [
+            0.006761224230303596,
+            0.30118360694687374,
+            -133.01351385832314
+        ],
+        [
+            -1.015163686235562e-05,
+            -6.1446437448541115e-06,
+            1.0
+        ]
+    ],
+    "_MG_0033.JPG": [
+        [
+            0.27606185926153753,
+            -0.026404804092889853,
+            1375.272634475419
+        ],
+        [
+            -0.0010723677635767624,
+            0.29515311278163947,
+            -100.68429938205516
+        ],
+        [
+            -9.052857469578076e-06,
+            -1.2204820913208855e-05,
+            0.9999999999999999
+        ]
+    ],
+    "_MG_0028.JPG": [
+        [
+            0.26440338611943587,
+            0.0026045945580321396,
+            364.59284619839826
+        ],
+        [
+            -0.006964204724181433,
+            0.2717645555916974,
+            312.46321903035016
+        ],
+        [
+            -5.700207974978432e-07,
+            3.522841969595173e-07,
+            1.0
+        ]
+    ],
+    "_MG_0034.JPG": [
+        [
+            0.21052146519169487,
+            -0.006593254792540033,
+            608.0327641198899
+        ],
+        [
+            -0.007958183251728498,
+            0.22570883701372793,
+            -53.15791013867708
+        ],
+        [
+            -1.0842718224783279e-05,
+            -7.730070128639387e-06,
+            1.0
+        ]
+    ],
+    "_MG_0035.JPG": [
+        [
+            0.2161718826427994,
+            0.0027010208600061047,
+            -132.87579727551437
+        ],
+        [
+            -0.009467451814316004,
+            0.2243518268522681,
+            -69.2428475197612
+        ],
+        [
+            -4.407959370144913e-06,
+            -7.541208073956777e-06,
+            1.0
+        ]
+    ],
+    "_MG_0026.JPG": [
+        [
+            0.2904456212232994,
+            -0.0027082698676195636,
+            -280.29305188005566
+        ],
+        [
+            0.004407603934951867,
+            0.29704706108753687,
+            924.5963840704983
+        ],
+        [
+            3.5487655805098523e-06,
+            -1.5512676720058303e-06,
+            1.0
+        ]
+    ],
+    "_MG_0025.JPG": [
+        [
+            0.2945264526823208,
+            -0.006734991465055032,
+            415.7484559496093
+        ],
+        [
+            0.0035020913734561685,
+            0.3077328986743299,
+            1001.7126637282828
+        ],
+        [
+            -1.7190099909348288e-06,
+            9.432848498221142e-07,
+            1.0
+        ]
+    ],
+    "_MG_0027.JPG": [
+        [
+            0.28824662665333217,
+            -0.009691373352911311,
+            -497.8993039676442
+        ],
+        [
+            0.0034350193774269062,
+            0.29110524555871403,
+            173.86701752197072
+        ],
+        [
+            3.561742273628099e-06,
+            -7.3893374045468736e-06,
             1.0
         ]
     ]
@@ -812,6 +973,8 @@ def align_affine_with_gradient_mse_lbfgs(
         diff_y = (ref_gy - src_gy) * valid
 
         loss = (diff_x.pow(2).mean() + diff_y.pow(2).mean())
+
+
         loss.backward()
         return loss
 
@@ -1085,11 +1248,11 @@ def _process_tile_worker(args):
      image_path,
      frag_items,   # list of (key, frag_path, mask_path)
      debug,
-     out_dir) = args
+     out_dir, matcher) = args
 
     image = np.asarray(cv.imread(image_path, cv.IMREAD_UNCHANGED))
     H, W = image.shape[:2]
-    image = cv.resize(image, (int(W / 2), int(H / 2)))
+    image = cv.resize(image, (int(W), int(H)))
     H, W = image.shape[:2]
     # padded region for alignment
     py0 = max(0, y0 - 100)
@@ -1105,10 +1268,16 @@ def _process_tile_worker(args):
     inner_x0 = x0 - px0
     inner_x1 = inner_x0 + (x1 - x0)
 
-    best_mse = None
-    best_key = None
+    best_cw_ssim = None
+    best_lpips = None
+    best_roma = None
+
+    best_key_cw = None
+    best_key_lpips = None
+    best_key_roma = None
+
     best_frag_opt = None
-    b_f = None
+    best_key = None
     # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     # pi_metric = iqa.create_metric('lpips', device=device)
 
@@ -1122,7 +1291,7 @@ def _process_tile_worker(args):
         #frag_tile_o = frag[y0:y1, x0:x1]
 
         #reg_tile, A, _ = align_restricted_affine(tile, frag_tile, max_deg=15, max_shear=0.06)
-        # opt_tile, mask , _, grad_mse = align_affine_with_gradient_mse_lbfgs(tile_padded, frag_tile_padded)
+        #opt_tile, mask , _, grad_mse = align_affine_with_gradient_mse_lbfgs(tile_padded, frag_tile_padded)
         # opt_tile = np.asarray(opt_tile)
         opt_tile = frag_tile_padded
         #mask = np.asarray(mask)[..., None].repeat(3, axis=2)
@@ -1134,52 +1303,107 @@ def _process_tile_worker(args):
         mask = mask[inner_y0:inner_y1, inner_x0:inner_x1]
 
 
+
         #ref_gx, ref_gy = gradients_rgb(tile)
         #src_gx, src_gy = gradients_rgb(opt_tile)
 
         #diff_x = (ref_gx - src_gx) * mask
         #diff_y = (ref_gy - src_gy) * mask
 
-        fsim_iqa = iqa.create_metric('cw_ssim', device='cuda')
-
+        cw_ssim = iqa.create_metric('cw_ssim', device='cuda')
+        lpips = iqa.create_metric('lpips', device='cuda')
         tile_torch = torch.from_numpy(tile / 255).permute((2, 0, 1)).unsqueeze(0).float()
         opt_tile_torch = torch.from_numpy(opt_tile / 255).permute((2, 0, 1)).unsqueeze(0).float()
-        grad_mse = fsim_iqa(tile_torch, opt_tile_torch).cpu().item()
+        result = matcher(tile_torch[0], opt_tile_torch[0])
+        ratio = result["num_inliers"] / max(len(result["matched_kpts0"]), 1)
+        #print(f"{model_name}: inliers={result['num_inliers']}, ratio={ratio:.3f}")
+        score_cw_ssim = cw_ssim(tile_torch, opt_tile_torch).cpu().item()
+        score_roma = ratio
+
+        score_lpips = lpips(tile_torch, opt_tile_torch).cpu().item()
+
         #grad_mse = (np.pow(diff_x,2).mean() + np.pow(diff_y, 2).mean())
 
 
-        # opt_tile, _, _ = photometric_fit_affine(tile, frag_tile)
+        #opt_tile, _, _ = photometric_fit_affine(tile, opt_tile, mask=mask)
         # reg_tile, A = align_affine_ecc_with_init(tile, opt_tile, n_iters=200, eps=1e-6, gauss=3)
 
-        mse = grad_mse
         # t_tile = torch.from_numpy(tile / 255).permute(2, 0, 1).float().unsqueeze(0).to(device)
         # t_frag = torch.from_numpy(frag_tile / 255).permute(2, 0, 1).float().unsqueeze(0).to(device)
-        # score = pi_metric(t_tile, t_frag)
-        #mse = score
-        print(mse)
 
-        if best_mse is None or mse > best_mse:
-            best_mse = mse
+
+
+        if best_cw_ssim is None or score_cw_ssim > best_cw_ssim:
+            best_cw_ssim = score_cw_ssim
+            best_key_cw = opt_tile
             best_key = key
-            if debug:
-                best_frag_opt = opt_tile
-                best_frag = mse
-                b_f = opt_tile
 
-    if debug and best_mse is not None and best_mse > 0.0 and best_frag_opt is not None:
-        diff = ((np.abs(tile - best_frag_opt) ** 0.5)  / ( 255 ** 0.5)) * 255
-        debug_concat = np.concatenate((tile, best_frag_opt), axis=0)
-        out = debug_concat
-        if out.dtype != np.uint8:
-            out = np.clip(out, 0, 255).astype(np.uint8)
+        if best_roma is None or score_roma > best_roma:
+            best_roma = score_roma
+            best_key_roma = opt_tile
+
+
+        if best_lpips is None or score_lpips > best_lpips:
+            best_lpips = score_lpips
+            best_key_lpips = opt_tile
+
+
+    if debug and best_cw_ssim is not None and best_cw_ssim > 0.0:
+        #diff = ((np.abs(tile - best_frag_opt) ** 0.5)  / ( 255 ** 0.5)) * 255
+        #debug_concat = np.concatenate((tile, best_frag_opt), axis=0)
+        #out = debug_concat
+        # if out.dtype != np.uint8:
+        #     out = np.clip(out, 0, 255).astype(np.uint8)
 
         os.makedirs(out_dir, exist_ok=True)
-        cv.imwrite(os.path.join(out_dir, f"vis_comparison_{y0}_{x0}_cwis-{best_mse:.3f}.jpg"), out)
-        cv.imwrite(os.path.join(out_dir, f"stitched_{y0}_{x0}.png"), tile)
-        cv.imwrite(os.path.join(out_dir, f"frag_{y0}_{x0}.png"), best_frag_opt)
-    return (y0, x0, best_mse, best_key)
+        stack = stack_images_with_metrics([tile, best_key_cw,best_key_roma,best_key_lpips], [f"Recon", f"CW_{best_cw_ssim}", f"ROMA_{best_roma}",f"LPIPS_{best_lpips}"], os.path.join(out_dir, f"stitched_{y0}_{x0}.png"), upscale=4)
+        # cv.imwrite(os.path.join(out_dir, f"vis_comparison_{y0}_{x0}_all.jpg"), stack)
+        # cv.imwrite(os.path.join(out_dir, f"stitched_{y0}_{x0}.png"), tile)
+        # cv.imwrite(os.path.join(out_dir, f"frag_{y0}_{x0}.png"), best_frag_opt)
+    return (y0, x0, best_cw_ssim, best_key)
 
+from PIL import Image, ImageDraw, ImageFont
 
+def stack_images_with_metrics(images, metrics, output_path="output.png", upscale=2):
+    """
+    images: list of 3 numpy arrays (H, W, C) or (H, W)
+    metrics: list of 3 strings
+    """
+    assert len(images) == 4 and len(metrics) == 4
+
+    h, w = images[0].shape[:2]
+    uw, uh = w * upscale, h * upscale
+
+    panels = []
+    for img, metric in zip(images, metrics):
+        # Normalize to uint8
+        if img.dtype != np.uint8:
+            img = (np.clip(img, 0, 1) * 255).astype(np.uint8) if img.max() <= 1.0 else img.astype(np.uint8)
+
+        # Grayscale to BGR
+        if img.ndim == 2:
+            img = cv.cvtColor(img, cv.COLOR_GRAY2BGR)
+
+        panel = cv.resize(img, (uw, uh), interpolation=cv.INTER_NEAREST)
+
+        font = cv.FONT_HERSHEY_DUPLEX
+        font_scale = max(0.5, uh / 600)
+        thickness = max(1, int(font_scale * 2))
+        margin = 10
+
+        # Shadow
+        cv.putText(panel, metric, (margin + 2, margin + 2 + int(font_scale * 30)),
+                    font, font_scale, (0, 0, 0), thickness + 2, cv.LINE_AA)
+        # Text
+        cv.putText(panel, metric, (margin, margin + int(font_scale * 30)),
+                    font, font_scale, (0, 255, 255), thickness, cv.LINE_AA)
+
+        panels.append(panel)
+
+    combined = np.hstack(panels)
+    cv.imwrite(output_path, combined)
+    print(f"Saved to {output_path}, size: {combined.shape[1]}x{combined.shape[0]}")
+    return combined
 
 def scale_homography(H_orig, w, h, W, H):
     """
@@ -1282,9 +1506,10 @@ class Tester:
     def __init__(self, config):
         self.debug = True
         self.config = config
-        self.config.final_res = (int(self.config.final_res[0] /2), int(self.config.final_res[1] /2))
-        self.roi = {'minH': int(6000 / 2), 'maxH': int(7000 /2), 'minW': int(2/2), 'maxW': int(400/2)}
+        self.config.final_res = (int(self.config.final_res[0]), int(self.config.final_res[1]))
+        self.roi = {'minH': int(8500), 'maxH': int(11800), 'minW': int(17100), 'maxW': int(17300)}
         self.brisque = iqa.create_metric("brisque", device='cuda')
+        self.matcher = get_matcher('roma', device="cuda")
 
     def warp_image(self, homography, frag_path, res=None):
         """
@@ -1336,7 +1561,7 @@ class Tester:
 
         os.makedirs('./plots/tiles', exist_ok=True)
         #final_img =  np.load(f"./metrics/{self.config.exp_name}/final_img.npy")
-        final_img_path = f'metrics/polokoule/final_stitch.png'
+        final_img_path = f'/home/dejvax/storage/brno12/scratch/Exposea/Exposea_p_200mpx_part1/2026_04_23:00_47_50/output/ceska_republika/final_stitch.png'
 
         self.frag_names = os.listdir(f"{self.config.input_folder}/images")
         self.frag_names.sort()
@@ -1346,7 +1571,7 @@ class Tester:
         for frag_n in self.frag_names:
             if frag_n == self.config.ref_name: continue
             frag_h = np.asarray(homogs_load[frag_n])
-            frag_h = scale_homography(frag_h, (3200, 4430), (self.config.final_res[0], self.config.final_res[1]))
+            frag_h = scale_homography(frag_h, (3243, 4292), (self.config.final_res[0], self.config.final_res[1]))
             frag_warped, mask = self.warp_image(frag_h, f"{self.config.input_folder}/images/{frag_n}")
             self.warped_frags[frag_n] = (frag_warped, mask)
             # cv.namedWindow("w", cv.WINDOW_NORMAL)
@@ -1359,7 +1584,7 @@ class Tester:
             # cv.imshow("w", frag_warped)
             # cv.waitKey(0)
         #results = self.run_parallel_tiles_futures(final_img_path, self.lo_frag_paths, 100, 100, 6)
-        results = self.run_single_process_tiles(final_img_path, self.warped_frags, 200, 200)
+        results = self.run_single_process_tiles(final_img_path, self.warped_frags, 100, 100)
 
     def tile_fully_in_fragment(self, mask, y0, y1, x0, x1):
         """
@@ -1421,7 +1646,7 @@ class Tester:
         os.makedirs(out_dir, exist_ok=True)
 
         tasks = [
-            (y0, y1, x0, x1, image_path, frag_items, self.debug, out_dir)
+            (y0, y1, x0, x1, image_path, frag_items, self.debug, out_dir, self.matcher)
             for (y0, y1, x0, x1) in tiles
         ]
 
