@@ -282,18 +282,29 @@ class HomogEstimator:
         return H, mkpts
 
     def retry_match_vismatch(self, frag_path, ref_img):
+        #TODO SIMPLIFY THIS
         res = None
         scale_modifiers = [1, -1, 2, -2, 4, -4]
         for scale_modifier in scale_modifiers:
-            frag_img = load_image(frag_path)
-            if hasattr(self.config, 'eval_res'):
-                frag_img = self.resize_cubic(frag_img, (self.resize, self.resize))
-            frag_img = self.match_details(frag_img, adjust_scale=scale_modifier)
+            frag_img = self.matcher.load_image(frag_path)
+            frag_img = self.match_details(frag_img, scale_modifier)
             self.images = [np.asarray(ref_img.permute(1, 2, 0).cpu()), np.asarray(frag_img.permute(1, 2, 0).cpu())]
-            results = self.matcher(frag_img, ref_img)
 
+            if hasattr(self.config, 'eval_res'):
+                ref_img, frag_img, scale_x, scale_y = self.resize_pair_to_max_res(ref_img, frag_img,
+                                                                                  max_res=self.config.eval_res)
+                results = self.matcher(frag_img, ref_img)
+                kpts_ref = self.restore_kpts_to_original(results["inlier_kpts1"], scale_x, scale_y)
+                kpts_frag = self.restore_kpts_to_original(results["inlier_kpts0"], scale_x, scale_y)
+            else:
+                results = self.matcher(frag_img, ref_img)
+                kpts_ref = results["inlier_kpts1"]
+                kpts_frag = results["inlier_kpts0"]
+
+            results["inlier_kpts1"] = kpts_ref
+            results["inlier_kpts0"] = kpts_frag
             res = results
-            if results["matched_kpts0"].shape[0] > self.config.homog.min_matches:
+            if results["inlier_kpts0"].shape[0] > self.config.homog.min_matches:
 
                 break
         return res
@@ -359,6 +370,84 @@ class HomogEstimator:
 
         return H, mkpts
 
+    def resize_pair_to_max_res(self,
+            img_a,
+            img_b,
+            max_res=1024
+    ):
+        """
+        Resizes both images so that image A fits within max_res (preserving aspect
+        ratio), then applies the same scale factors to image B independently.
+
+        This means both images are scaled by the same sx/sy factors, preserving
+        their relative spatial relationship for downstream homography estimation.
+
+        Args:
+            img_a:   Tensor (C, H, W) — drives the scale calculation
+            img_b:   Tensor (C, H, W) — scaled by the same factor as A
+            max_res: Maximum allowed dimension in either axis (default 1024)
+
+        Returns:
+            img_a_resized: A scaled to fit max_res
+            img_b_resized: B scaled by the same factor
+            scale_x:       Horizontal scale factor applied (B_new_W / B_orig_W)
+            scale_y:       Vertical scale factor applied (B_new_H / B_orig_H)
+        """
+        _, H_a, W_a = img_a.shape
+
+        # Compute scale factor from A so it fits within max_res box
+        scale = min(max_res / H_a, max_res / W_a)
+
+        # No upscaling — only downscale if needed
+        if scale >= 1.0:
+            return img_a, img_b, 1.0, 1.0
+
+        new_H_a = int(round(H_a * scale))
+        new_W_a = int(round(W_a * scale))
+
+        # Compute what B's new size should be using the same scale factors
+        _, H_b, W_b = img_b.shape
+        new_H_b = int(round(H_b * scale))
+        new_W_b = int(round(W_b * scale))
+
+        def resize(img: torch.Tensor, new_h: int, new_w: int) -> torch.Tensor:
+            return torch.F.interpolate(
+                img.unsqueeze(0),
+                size=(new_h, new_w),
+                mode="bicubic",
+                align_corners=False,
+                antialias=True,
+            ).squeeze(0)
+
+        img_a_resized = resize(img_a, new_H_a, new_W_a)
+        img_b_resized = resize(img_b, new_H_b, new_W_b)
+
+        # Actual scale factors applied to B (use these to invert kpts later)
+        scale_x = new_W_b / W_b
+        scale_y = new_H_b / H_b
+
+        return img_a_resized, img_b_resized, scale_x, scale_y
+
+    def restore_kpts_to_original(self,
+            kpts,
+            scale_x,
+            scale_y,
+    ):
+        """
+        Rescales keypoints from the resized image space back to the original
+        image pixel space.
+
+        Args:
+            kpts:    (N, 2) array of (x, y) keypoints in resized space
+            scale_x: Horizontal scale factor returned by resize_pair_to_max_res
+            scale_y: Vertical scale factor returned by resize_pair_to_max_res
+
+        Returns:
+            kpts in original pixel space
+        """
+        import numpy as np
+        return kpts / np.array([scale_x, scale_y])
+
     def register(self, ref_path: str, frag_paths: list[str]):
         """
         Registers fragments against the reference image by extracting and matching features,
@@ -403,10 +492,6 @@ class HomogEstimator:
 
             if self.extractor is not None:
                 frag_img = load_img(frag_path)
-                if hasattr(self.config, 'eval_res'):
-                    frag_img = self.resize_cubic(frag_img, (self.resize, self.resize))
-
-                #frag_img = self.resize_cubic(frag_img, (resize, resize))
                 self.images = [np.asarray(ref_img.permute(1, 2, 0).cpu()), np.asarray(frag_img.permute(1, 2, 0).cpu())]
                 # Match features with between ref and frag and compute homography
                 H, mkpts = self.match_fragments(feats_ref, frag_img, idx)
@@ -416,13 +501,19 @@ class HomogEstimator:
                     H, mkpts = self.retry_matching(feats_ref, frag_path)
             else:
                 frag_img = self.matcher.load_image(frag_path)
-                if hasattr(self.config, 'eval_res'):
-                    frag_img = self.resize_cubic(frag_img, (self.resize, self.resize))
                 frag_img = self.match_details(frag_img)
                 self.images = [np.asarray(ref_img.permute(1, 2, 0).cpu()), np.asarray(frag_img.permute(1, 2, 0).cpu())]
-                results = self.matcher(frag_img, ref_img)
-                kpts_ref = results["inlier_kpts1"]
-                kpts_frag = results["inlier_kpts0"]
+
+                if hasattr(self.config, 'eval_res'):
+                    ref_img, frag_img, scale_x, scale_y = self.resize_pair_to_max_res(ref_img, frag_img, max_res=self.config.eval_res)
+                    results = self.matcher(frag_img, ref_img)
+                    kpts_ref =  self.restore_kpts_to_original(results["inlier_kpts1"], scale_x, scale_y)
+                    kpts_frag = self.restore_kpts_to_original(results["inlier_kpts0"], scale_x, scale_y)
+                else:
+                    results = self.matcher(frag_img, ref_img)
+                    kpts_ref =  results["inlier_kpts1"]
+                    kpts_frag = results["inlier_kpts0"]
+
                 mkpts = [kpts_frag, kpts_ref]
                 H, mask = cv.findHomography(
                     kpts_frag,
@@ -431,7 +522,7 @@ class HomogEstimator:
                     ransacReprojThreshold=self.ransac_reproj_thresh,
                     confidence=self.ransac_conf
                 )
-                #H = np.linalg.inv(results["H"])
+
 
                 if H is None or mkpts[0].shape[0] < self.config.homog.min_matches:
                     self.logger.warning(f"Autofix | Matcher was unable to estimate homography trying simple autofix")

@@ -533,6 +533,8 @@ class StitchApp():
         corner_coords = list(self.config.corner_coords)
         ordered_coords = order_points(np.array(corner_coords))
 
+        # width = int(min(ordered_coords[1][0] - ordered_coords[0][0], ordered_coords[2][0] - ordered_coords[3][0]))
+        # height = int(min(ordered_coords[3][1] - ordered_coords[0][1], ordered_coords[2][1] - ordered_coords[1][1]))
 
         pts_dst = np.array([
             [0, 0],
