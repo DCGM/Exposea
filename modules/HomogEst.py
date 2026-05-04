@@ -107,6 +107,16 @@ def _save_key_imgs(dat1, dat2, path="./plots/matches.jpg"):
 
 
 
+
+def _resize(img: torch.Tensor, new_h: int, new_w: int) -> torch.Tensor:
+    return torch.nn.functional.interpolate(
+        img.unsqueeze(0),
+        size=(new_h, new_w),
+        mode="bicubic",
+        align_corners=False,
+        antialias=True,
+    ).squeeze(0)
+
 class HomogEstimator:
     """
     The HomogEstimator class is used for estimating homographies between images. It utilizes deep feature
@@ -133,6 +143,9 @@ class HomogEstimator:
             self.resize = config.eval_res
         else:
             self.resize = None
+
+        self.scale_x = 1.0
+        self.scale_y = 1.0
 
         if self.config.homog.feature_matcher == 'LightGlue':
             self.extractor = SuperPoint(max_num_keypoints=config.homog.max_feat_points).eval().to(self.device)
@@ -355,8 +368,7 @@ class HomogEstimator:
         Raises:
             Any raised exceptions are not explicitly documented.
         """
-        # Try to match details according to specified values in donfig
-        frag_img = self.match_details(frag_img)
+
         feats_frag = self.extractor.extract(frag_img.to(self.device))
 
         # Match features with reference
@@ -370,63 +382,39 @@ class HomogEstimator:
 
         return H, mkpts
 
-    def resize_pair_to_max_res(self,
-            img_a,
-            img_b,
-            max_res=1024
+    def compute_scale_and_resize_ref(
+            self,
+            img_ref: torch.Tensor,
+            max_res: int = 1024,
     ):
-        """
-        Resizes both images so that image A fits within max_res (preserving aspect
-        ratio), then applies the same scale factors to image B independently.
+        _, H, W = img_ref.shape
+        scale = min(max_res / H, max_res / W)
 
-        This means both images are scaled by the same sx/sy factors, preserving
-        their relative spatial relationship for downstream homography estimation.
-
-        Args:
-            img_a:   Tensor (C, H, W) — drives the scale calculation
-            img_b:   Tensor (C, H, W) — scaled by the same factor as A
-            max_res: Maximum allowed dimension in either axis (default 1024)
-
-        Returns:
-            img_a_resized: A scaled to fit max_res
-            img_b_resized: B scaled by the same factor
-            scale_x:       Horizontal scale factor applied (B_new_W / B_orig_W)
-            scale_y:       Vertical scale factor applied (B_new_H / B_orig_H)
-        """
-        _, H_a, W_a = img_a.shape
-
-        # Compute scale factor from A so it fits within max_res box
-        scale = min(max_res / H_a, max_res / W_a)
-
-        # No upscaling — only downscale if needed
         if scale >= 1.0:
-            return img_a, img_b, 1.0, 1.0
+            return img_ref, 1.0, 1.0
 
-        new_H_a = int(round(H_a * scale))
-        new_W_a = int(round(W_a * scale))
+        new_H = int(round(H * scale))
+        new_W = int(round(W * scale))
 
-        # Compute what B's new size should be using the same scale factors
-        _, H_b, W_b = img_b.shape
-        new_H_b = int(round(H_b * scale))
-        new_W_b = int(round(W_b * scale))
+        img_ref_resized = _resize(img_ref, new_H, new_W)
+        scale_x = new_W / W
+        scale_y = new_H / H
 
-        def resize(img: torch.Tensor, new_h: int, new_w: int) -> torch.Tensor:
-            return torch.F.interpolate(
-                img.unsqueeze(0),
-                size=(new_h, new_w),
-                mode="bicubic",
-                align_corners=False,
-                antialias=True,
-            ).squeeze(0)
+        return img_ref_resized, scale_x, scale_y
 
-        img_a_resized = resize(img_a, new_H_a, new_W_a)
-        img_b_resized = resize(img_b, new_H_b, new_W_b)
+    def resize_fragment(self,
+            img_frag: torch.Tensor,
+            scale_x: float,
+            scale_y: float,
+    ):
+        if scale_x == 1.0 and scale_y == 1.0:
+            return img_frag
 
-        # Actual scale factors applied to B (use these to invert kpts later)
-        scale_x = new_W_b / W_b
-        scale_y = new_H_b / H_b
+        _, H, W = img_frag.shape
+        new_H = int(round(H * scale_y))
+        new_W = int(round(W * scale_x))
 
-        return img_a_resized, img_b_resized, scale_x, scale_y
+        return _resize(img_frag, new_H, new_W)
 
     def restore_kpts_to_original(self,
             kpts,
@@ -445,7 +433,6 @@ class HomogEstimator:
         Returns:
             kpts in original pixel space
         """
-        import numpy as np
         return kpts / np.array([scale_x, scale_y])
 
     def register(self, ref_path: str, frag_paths: list[str]):
@@ -478,11 +465,10 @@ class HomogEstimator:
             feats_ref = self.extractor.extract(ref_img.to(self.device))
             self.logger.info(f"REF Num. Features: {feats_ref['keypoints'].shape[1]}")
         else:
-            ref_img = self.matcher.load_image(ref_path, self.resize)
+            ref_img = self.matcher.load_image(ref_path)
 
-        self.orig_ref_size = ref_img.shape[2:]
-        if hasattr(self.config, 'eval_res'):
-            ref_img = self.resize_cubic(ref_img,(self.resize, self.resize))
+        if self.resize is not None:
+            ref_img, self.scale_x, self.scale_y = self.compute_scale_and_resize_ref(ref_img, max_res=self.resize)
 
         # Iterate over fragments and estimate homography
         homographies, corrs, to_del = [], [], []
@@ -492,7 +478,12 @@ class HomogEstimator:
 
             if self.extractor is not None:
                 frag_img = load_img(frag_path)
+                # Try to match details according to specified values in donfig
+                frag_img = self.match_details(frag_img)
                 self.images = [np.asarray(ref_img.permute(1, 2, 0).cpu()), np.asarray(frag_img.permute(1, 2, 0).cpu())]
+                if self.resize is not None:
+                    frag_img = self.resize_fragment(frag_img, self.scale_x, self.scale_y)
+
                 # Match features with between ref and frag and compute homography
                 H, mkpts = self.match_fragments(feats_ref, frag_img, idx)
                 # If we were unable to compute homography or not enough point were match try to fix it
@@ -504,11 +495,12 @@ class HomogEstimator:
                 frag_img = self.match_details(frag_img)
                 self.images = [np.asarray(ref_img.permute(1, 2, 0).cpu()), np.asarray(frag_img.permute(1, 2, 0).cpu())]
 
-                if hasattr(self.config, 'eval_res'):
-                    ref_img, frag_img, scale_x, scale_y = self.resize_pair_to_max_res(ref_img, frag_img, max_res=self.config.eval_res)
+                if self.resize is not None:
+                    frag_img = self.resize_fragment(frag_img, self.scale_x, self.scale_y)
+
                     results = self.matcher(frag_img, ref_img)
-                    kpts_ref =  self.restore_kpts_to_original(results["inlier_kpts1"], scale_x, scale_y)
-                    kpts_frag = self.restore_kpts_to_original(results["inlier_kpts0"], scale_x, scale_y)
+                    kpts_ref =  self.restore_kpts_to_original(results["inlier_kpts1"], self.scale_x, self.scale_y)
+                    kpts_frag = self.restore_kpts_to_original(results["inlier_kpts0"], self.scale_x, self.scale_y)
                 else:
                     results = self.matcher(frag_img, ref_img)
                     kpts_ref =  results["inlier_kpts1"]
@@ -551,7 +543,8 @@ class HomogEstimator:
                 continue
             homographies.append(H)
             corrs.append(mkpts)
-
+            # Memory clean
+            torch.cuda.empty_cache()
         return homographies, corrs, to_del
 
     def get_homography(self, feats1, feats2, matches12, pair):
