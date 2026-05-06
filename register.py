@@ -401,7 +401,7 @@ class StitchApp():
             # The img paths is sent to load the images in correct format for feature extraction and matching
             # homographies, _ , to_del = self.homog_estimator.match(self.ref_resized_path, self.frag_paths)
             homographies, _, to_del = self.homog_estimator.register(self.ref_resized_path, self.frag_paths)
-            # self.frag_paths = [val for idx, val in enumerate(self.frag_paths) if idx not in to_del]
+            self.frag_paths = [val for idx, val in enumerate(self.frag_paths) if idx not in to_del]
 
             if self.config.homog.save:
                 norm_homog = {}

@@ -3,7 +3,7 @@ exp_name: map1                                           # Used for saving parti
 ref_name: 0.JPG                                          # Name of overview image contained in img folder
 preset_name: p_100mpx                                    # p_100mpx, p_200mpx, p_400mpx, p_normal
 save_format: 'tif'                                       # Save format for result image. Supported (jp2, j2k, tif, tiff)
-final_res: [4000, 6000]                                  # Final resolution in pixel, select to matxh aspect ratio as best as possible format is [height, width]
+final_res: [6000, 8000]                                  # Final resolution in pixel, select to matxh aspect ratio as best as possible format is [height, width]
 corner_coords: [[40,40],[0,6399],[8399,0],[8360,6399]]   # Pixel coordinates of the four corners of the document given in x,y or width, height format e.g. [[W1,H1],[W2,H2],[W3,H3],[W4,H4]]
 
 relative_scale: 2
@@ -11,12 +11,10 @@ relative_scale: 2
 metrics:
   calculate: True
 
-produce_uv_map: True
-
+produce_uv_map: False
 
 homog:
   save: "./homogs"
-  feature_matcher: superpoint-lightglue
 ########################################################################
 # Optional parameters here
 # All parameters present in default.yaml can be modified here
