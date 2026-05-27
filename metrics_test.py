@@ -54,10 +54,11 @@ def compute_flow_misalignment_score(img1, img2):
 
     # Load images (BGR -> keep as-is, IOAdapter handles conversion)
 
-
+    input1 = img1[0].permute(1, 2, 0).cpu().numpy()
+    input2 = img2[0].permute(1, 2, 0).cpu().numpy()
     # Prepare inputs
-    io_adapter = IOAdapter(model, img1.shape[:2])
-    inputs = io_adapter.prepare_inputs([img1, img2])
+    io_adapter = IOAdapter(model, input1.shape[:2])
+    inputs = io_adapter.prepare_inputs([input1, input2])
 
     # Run inference
     import torch
@@ -105,8 +106,9 @@ def compute_flow_misalignment_score(img1, img2):
         0.3 * normalized_gradient +
         0.2 * outlier_ratio
     )
-    stitched_flow_img = np_flow_to_img(flows)
-    cv.imshow("flow", stitched_flow_img)
+    stitched_flow_img = np_flow_to_img(flows.permute(1, 2, 0).detach().cpu().numpy())
+    print(score)
+    cv.imshow("flow", np.hstack(( np.astype(input1 * 255, np.uint8), stitched_flow_img, np.astype(input2 * 255, np.uint8))))
     cv.waitKey()
     return {
         "score": score,             # HIGH = bad alignment / jumps; LOW = pure shift
@@ -439,7 +441,7 @@ class Tester:
             # cv.imshow("w", frag_warped)
             # cv.waitKey(0)
         #results = self.run_parallel_tiles_futures(final_img_path, self.lo_frag_paths, 100, 100, 6)
-        results = self.run_single_process_tiles(final_img_path, self.warped_frags, 100, 100)
+        results = self.run_single_process_tiles(final_img_path, self.warped_frags, 400, 400)
 
     def run_single_process_tiles(self, image_path, warped_frags, th, tw):
 
