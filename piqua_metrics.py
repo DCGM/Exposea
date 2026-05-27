@@ -1,5 +1,5 @@
 import os
-from distutils.command.config import config
+#from distutils.command.config import config
 
 os.environ["OPENCV_IO_MAX_IMAGE_PIXELS"] = '10000000000'
 import os.path as osp
@@ -35,21 +35,21 @@ import gc
 class Tester:
     def __init__(self):
         self.debug = True
-        self.roi = {'minH': 7100, 'maxH': 8100, 'minW': 0, 'maxW': 500}
+        self.roi = {'minH': 1222, 'maxH': 5185, 'minW': 0, 'maxW': 592}
         self.brisque = iqa.create_metric("fsim", device='cuda')
         print(iqa.list_models())
         print(f"Is lower better: {self.brisque.lower_better}")
 
         os.makedirs('./plots/tiles', exist_ok=True)
-        self.final_img_path = f'metrics/polokoule/final_stitch.png'
-        self.frag_paths = os.listdir(f"metrics/polokoule/images")
+        self.final_img_path = f'/home/dejvax/storage/brno12/scratch/Exposea/Exposea_p_200mpx_part3/2026_04_30:04_18_24/output/rozpad_ru/final_stitch.png'
+        self.frag_paths = os.listdir(f"/home/dejvax/storage/brno12/Exposea/Data/part3/rozpad_ru")
 
 
     def run(self):
 
         image = np.asarray(cv.imread(self.final_img_path, cv.IMREAD_UNCHANGED))
         H, W = image.shape[:2]
-        self.roi = {'minH': 0, 'maxH': H, 'minW': 0, 'maxW': W}
+        # self.roi = {'minH': 0, 'maxH': H, 'minW': 0, 'maxW': W}
         th, tw = 2024, 2024
         tiles = [
             (y0, min(y0 + th, H), x0, min(x0 + tw, W))
