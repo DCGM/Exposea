@@ -39,7 +39,7 @@ def np_flow_to_img(flows):
 
     return flow_bgr_npy
 
-def compute_flow_misalignment_score(img1, img2):
+def compute_flow_misalignment_score(img1, img2, model):
     """
     Computes a misalignment score between two images using optical flow.
 
@@ -48,9 +48,6 @@ def compute_flow_misalignment_score(img1, img2):
 
     Returns a dict with the scalar score and diagnostic sub-metrics.
     """
-    # Load model
-    model = ptlflow.get_model("memflow_t", ckpt_path="sintel")
-    model.eval()
 
     # Load images (BGR -> keep as-is, IOAdapter handles conversion)
 
@@ -102,20 +99,21 @@ def compute_flow_misalignment_score(img1, img2):
 
     # Composite: weighted sum (tune weights to your use case)
     score = (
-        0.5 * normalized_variance +
-        0.3 * normalized_gradient +
-        0.2 * outlier_ratio
-    )
-    stitched_flow_img = np_flow_to_img(flows.permute(1, 2, 0).detach().cpu().numpy())
-    print(score)
-    cv.imshow("flow", np.hstack(( np.astype(input1 * 255, np.uint8), stitched_flow_img, np.astype(input2 * 255, np.uint8))))
-    cv.waitKey()
+        0.3 * normalized_variance +
+        0.4 * normalized_gradient +
+        0.3 * outlier_ratio
+    ) * 100
+    stitched_flow_img = np_flow_to_img(flows.permute(1, 2, 0).detach().cpu().numpy()) / 255
+    # print(score)
+    # cv.imshow("flow", np.hstack(( np.astype(input1 * 255, np.uint8), stitched_flow_img, np.astype(input2 * 255, np.uint8))))
+    # cv.waitKey()
     return {
         "score": score,             # HIGH = bad alignment / jumps; LOW = pure shift
         "mean_magnitude": mean_magnitude,
         "magnitude_variance": mag_variance,
         "mean_gradient": mean_gradient,
         "outlier_ratio": outlier_ratio,
+        'flow_img': stitched_flow_img,
     }
 
 
@@ -130,7 +128,7 @@ def _process_tile_worker(args):
      image_path,
      frag_items,   # list of (key, frag_path, mask_path)
      debug,
-     out_dir, metrics_calculator) = args
+     out_dir, metrics_calculator, model) = args
 
     image = np.asarray(cv.imread(image_path, cv.IMREAD_UNCHANGED))
     H, W = image.shape[:2]
@@ -153,7 +151,8 @@ def _process_tile_worker(args):
 
     metrics_results = {'cw_ssim': {'score': 0},
                        'lpips': {'score': 0},
-                       'roma': {'score': 0}}
+                       'roma': {'score': 0},
+                       'flow': {'score': 1000}}
 
     for key, frag, mask in frag_items:
 
@@ -170,7 +169,9 @@ def _process_tile_worker(args):
         t_stitch_tile = torch.from_numpy(stitch_tile / 255).permute((2, 0, 1)).unsqueeze(0).float()
         t_frag_tile = torch.from_numpy(frag_tile / 255).permute((2, 0, 1)).unsqueeze(0).float()
 
-        res = compute_flow_misalignment_score(t_stitch_tile, t_frag_tile)
+        flow_res = compute_flow_misalignment_score(t_stitch_tile, t_frag_tile, model)
+        flow_score = flow_res['score']
+        flow_img = flow_res['flow_img']
 
         # CW_SSIM
         cw_ssim_score = metrics_calculator['cw_ssim'](t_stitch_tile, t_frag_tile)
@@ -195,6 +196,13 @@ def _process_tile_worker(args):
             metrics_results['lpips']['score'] = lpips_score.item()
             metrics_results['lpips']['best_tile'] = frag_tile
             metrics_results['lpips']['best_tile_key'] = key
+
+        if metrics_results['flow']['score'] > flow_score:
+            metrics_results['flow']['score'] = flow_score
+            metrics_results['flow']['best_tile'] = frag_tile
+            metrics_results['flow']['best_tile_key'] = key
+            metrics_results['flow']['flow_img'] = flow_img
+
 
     metrics_results['offset'] = (y0, x0)
     metrics_results['stitch'] = stitch_tile
@@ -354,11 +362,11 @@ class Tester:
         self.debug = True
         self.config = config
         self.config.final_res = (int(self.config.final_res[0] / N), int(self.config.final_res[1] / N))
-        self.roi = {'minH': 4650, 'maxH': 5461, 'minW': 3781, 'maxW': 4873}
+        self.roi = {'minH': 21000, 'maxH': 23000, 'minW': 0, 'maxW': 1000}
         for k,v in self.roi.items():
             self.roi[k] = int(v/N)
         #self.roi = {'minH': int(11000/N), 'maxH': int(11200/N), 'minW': int(3300/N), 'maxW': int(4800/N)}
-        self.rect_size = (3760, 2770)
+        self.rect_size = (2770, 3768)
 
         self.metrics_calculator = {'cw_ssim': iqa.create_metric('cw_ssim', device='cuda'),
                                    'roma': RomaMetric(),
@@ -467,8 +475,12 @@ class Tester:
         out_dir = "./plots/tiles"
         os.makedirs(out_dir, exist_ok=True)
 
+        # Load model
+        model = ptlflow.get_model("memflow_t", ckpt_path="sintel")
+        model.eval()
+
         tasks = [
-            (y0, y1, x0, x1, res_ref_path, frag_items, self.debug, out_dir, self.metrics_calculator)
+            (y0, y1, x0, x1, res_ref_path, frag_items, self.debug, out_dir, self.metrics_calculator, model)
             for (y0, y1, x0, x1) in tiles
         ]
 
@@ -511,54 +523,86 @@ class Tester:
 
     def save_results(self, results, out_path, best_threshold=None, worst_threshold=None, upscale=None):
 
-        if best_threshold is None:
-            best_threshold = {'cw_ssim': 0.9, 'lpips': 0.9, 'roma': 0.98}
-        if worst_threshold is None:
-            worst_threshold = {'cw_ssim': 0.8, 'lpips': 0.9, 'roma': 0.97}
-
-
 
         # Save worst in both
-        save_path = osp.join(out_path, 'worst_both')
+        save_path_worst = osp.join(out_path, 'worst')
         save_comp_path = osp.join(out_path, 'comparison')
+        save_path_best = osp.join(out_path, 'best')
         os.makedirs(save_comp_path, exist_ok=True)
-        os.makedirs(save_path, exist_ok=True)
-        saved = []
+        os.makedirs(save_path_worst, exist_ok=True)
+        os.makedirs(save_path_best, exist_ok=True)
 
         for idx, result in enumerate(results):
 
-            roma_score = result['roma']['score']
-            ssim_score = max(0.1, math.log(result['cw_ssim']['score']**0.8) + 1)
-            decision_score = round(roma_score * ssim_score,3)
+            if 'best_tile' not in result['flow'].keys():
+                continue
 
-            stack_images_with_metrics([result['stitch'], result['roma']['best_tile'], result['cw_ssim']['best_tile']],
-                                      [f'{decision_score}', f'{result['roma']['score']:.3f}',f'{result['cw_ssim']['score']:.3f}' ],
-                                      output_path=osp.join(save_comp_path, f"{result['offset'][0]}_{result['offset'][1]}.png"))
+            # Decide only based on flow score
+            flow_score = result['flow']['score']
 
 
-            # CW SSIM
-            if decision_score < 0.9:
 
-                if upscale is not None:
-                    uh, uw = result['stitch'].shape[:2]
-                    uh, uw = int(uh * upscale), int(uw * upscale)
+            if flow_score > 10.0:
+                save_name = f"flow_{flow_score:.3f}_{result['offset'][0]}_{result['offset'][1]}.png"
+                cv.imwrite(osp.join(save_path_worst, save_name),result['stitch'])
+                stack_images_with_metrics([result['stitch'], result['flow']['best_tile'], result['flow']['flow_img']],
+                                          [f'{flow_score:.3f}', f'{flow_score:.3f}', f'{flow_score:.3f}'],
+                                          output_path=osp.join(save_comp_path,
+                                                               f"worst_{result['offset'][0]}_{result['offset'][1]}.png"))
 
-                    save_name = f"cwrm_{result['cw_ssim']['score']:.3f}_{result['roma']['score']:.3f}_{result['offset'][0]}_{result['offset'][1]}.png"
-                    cv.imwrite(osp.join(save_path, save_name),
-                               cv.resize(result['stitch'], (uw, uh), interpolation=cv.INTER_CUBIC))
-                    uh, uw = result['roma']['best_tile'].shape[:2]
-                    uh, uw = int(uh * upscale), int(uw * upscale)
 
-                    save_name = f"no_{result['cw_ssim']['score']:.3f}_{result['roma']['score']:.3f}_{result['offset'][0]}_{result['offset'][1]}.png"
-                    cv.imwrite(osp.join(save_path, save_name), cv.resize(result['roma']['best_tile'], (uw, uh), interpolation=cv.INTER_CUBIC))
-                else:
-                    save_name = f"cwrm_{result['cw_ssim']['score']:.3f}_{result['roma']['score']:.3f}_{result['offset'][0]}_{result['offset'][1]}.png"
-                    cv.imwrite(osp.join(save_path, save_name), result['stitch'])
+            if flow_score < 5.0:
+                save_name = f"flow_{flow_score:.3f}_{result['offset'][0]}_{result['offset'][1]}.png"
+                cv.imwrite(osp.join(save_path_best, save_name), result['stitch'])
+                stack_images_with_metrics([result['stitch'], result['flow']['best_tile'], result['flow']['flow_img']],
+                                          [f'{flow_score:.3f}', f'{flow_score:.3f}', f'{flow_score:.3f}'],
+                                          output_path=osp.join(save_comp_path,
+                                                               f"best_{result['offset'][0]}_{result['offset'][1]}.png"))
 
-                    save_name = f"no_{result['cw_ssim']['score']:.3f}_{result['roma']['score']:.3f}_{result['offset'][0]}_{result['offset'][1]}.png"
-                    cv.imwrite(osp.join(save_path, save_name), result['roma']['best_tile'])
 
-                saved.append(idx)
+            # if result['cw_ssim']['score'] == 0:
+            #     continue
+            # roma_score = result['roma']['score']
+            # ssim_score = max(0.1, math.log((result['cw_ssim']['score'] + 1e-5 )**0.8) + 1)
+            # flow_score = result['flow']['score']
+            # decision_score = round(roma_score * ssim_score,3)
+            #
+            # stack_images_with_metrics([result['stitch'], result['roma']['best_tile'], result['cw_ssim']['best_tile'], result['flow']['best_tile'], result['flow']['flow_img']],
+            #                           [f'{decision_score}', f'{result['roma']['score']:.3f}',f'{result['cw_ssim']['score']:.3f}', f'{result['flow']['score']:.3f}', f'{result['flow']['score']:.3f}' ],
+            #                           output_path=osp.join(save_comp_path, f"{result['offset'][0]}_{result['offset'][1]}.png"))
+            #
+            # if flow_score > 10.0:
+            #     if upscale is not None:
+            #         uh, uw = result['stitch'].shape[:2]
+            #         uh, uw = int(uh * upscale), int(uw * upscale)
+            #         save_name = f"flow_{flow_score:.3f}_{result['offset'][0]}_{result['offset'][1]}.png"
+            #         save_name = f"cwrm_{result['cw_ssim']['score']:.3f}_{result['roma']['score']:.3f}_{flow_score:.3f}_{result['offset'][0]}_{result['offset'][1]}.png"
+            #         cv.imwrite(osp.join(save_path, save_name),
+            #                    cv.resize(result['stitch'], (uw, uh), interpolation=cv.INTER_CUBIC))
+
+            # # CW SSIM
+            # if decision_score < 0.9:
+            #
+            #     if upscale is not None:
+            #         uh, uw = result['stitch'].shape[:2]
+            #         uh, uw = int(uh * upscale), int(uw * upscale)
+            #
+            #         save_name = f"cwrm_{result['cw_ssim']['score']:.3f}_{result['roma']['score']:.3f}_{result['offset'][0]}_{result['offset'][1]}.png"
+            #         cv.imwrite(osp.join(save_path, save_name),
+            #                    cv.resize(result['stitch'], (uw, uh), interpolation=cv.INTER_CUBIC))
+            #         uh, uw = result['roma']['best_tile'].shape[:2]
+            #         uh, uw = int(uh * upscale), int(uw * upscale)
+            #
+            #         save_name = f"no_{result['cw_ssim']['score']:.3f}_{result['roma']['score']:.3f}_{result['offset'][0]}_{result['offset'][1]}.png"
+            #         cv.imwrite(osp.join(save_path, save_name), cv.resize(result['roma']['best_tile'], (uw, uh), interpolation=cv.INTER_CUBIC))
+            #     else:
+            #         save_name = f"cwrm_{result['cw_ssim']['score']:.3f}_{result['roma']['score']:.3f}_{result['offset'][0]}_{result['offset'][1]}.png"
+            #         cv.imwrite(osp.join(save_path, save_name), result['stitch'])
+            #
+            #         save_name = f"no_{result['cw_ssim']['score']:.3f}_{result['roma']['score']:.3f}_{result['offset'][0]}_{result['offset'][1]}.png"
+            #         cv.imwrite(osp.join(save_path, save_name), result['roma']['best_tile'])
+            #
+            #     saved.append(idx)
 
         # # Save worst in ROMA
         # for idx, result in enumerate(results):
@@ -569,27 +613,27 @@ class Tester:
         #     cv.imwrite(osp.join(save_path, save_name),  result['stitch'])
         #     saved.append(idx)
 
-        saved = []
-        save_path = osp.join(out_path, 'best_both')
-        os.makedirs(save_path, exist_ok=True)
-        for idx, result in enumerate(results):
-
-
-            roma_score = result['roma']['score']
-            ssim_score = max(0.1, math.log(result['cw_ssim']['score'] ** 0.8) + 1)
-            decision_score = round(roma_score * ssim_score, 3)
-            # CW SSIM
-            if decision_score > 0.98:
-                if upscale is not None:
-                    uh, uw = result['cw_ssim']['best_tile'].shape[:2]
-                    uh, uw = int(uh * upscale), int(uw * upscale)
-
-                    save_name = f"cwrm_{result['cw_ssim']['score']}_{result['roma']['score']}_{result['offset'][0]}_{result['offset'][1]}.png"
-                    cv.imwrite(osp.join(save_path, save_name), cv.resize(result['cw_ssim']['best_tile'], (uw, uh), interpolation=cv.INTER_CUBIC))
-                else:
-                    save_name = f"cwrm_{result['cw_ssim']['score']}_{result['roma']['score']}_{result['offset'][0]}_{result['offset'][1]}.png"
-                    cv.imwrite(osp.join(save_path, save_name), result['cw_ssim']['best_tile'])
-                saved.append(idx)
+        # saved = []
+        # save_path = osp.join(out_path, 'best_both')
+        # os.makedirs(save_path, exist_ok=True)
+        # for idx, result in enumerate(results):
+        #
+        #
+        #     roma_score = result['roma']['score']
+        #     ssim_score = max(0.1, math.log(result['cw_ssim']['score'] ** 0.8) + 1)
+        #     decision_score = round(roma_score * ssim_score, 3)
+        #     # CW SSIM
+        #     if decision_score > 0.98:
+        #         if upscale is not None:
+        #             uh, uw = result['cw_ssim']['best_tile'].shape[:2]
+        #             uh, uw = int(uh * upscale), int(uw * upscale)
+        #
+        #             save_name = f"cwrm_{result['cw_ssim']['score']}_{result['roma']['score']}_{result['offset'][0]}_{result['offset'][1]}.png"
+        #             cv.imwrite(osp.join(save_path, save_name), cv.resize(result['cw_ssim']['best_tile'], (uw, uh), interpolation=cv.INTER_CUBIC))
+        #         else:
+        #             save_name = f"cwrm_{result['cw_ssim']['score']}_{result['roma']['score']}_{result['offset'][0]}_{result['offset'][1]}.png"
+        #             cv.imwrite(osp.join(save_path, save_name), result['cw_ssim']['best_tile'])
+        #         saved.append(idx)
 
 
 def compose_configs(args):
