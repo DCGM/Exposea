@@ -123,6 +123,7 @@ class StitchApp():
         self.run_timer.tic()
         # Reference image has to be rectangularized and resized to final resolution
         self.rect_ref()
+
         # Calculates nad cache resized reference to process resolution for computation
         self.calc_process_params()
 
@@ -131,6 +132,7 @@ class StitchApp():
         self.logger.info(f"Estimating homographies for {len(self.frag_paths)} images")
         homographies = self.run_homog(resize=False)
         # Initialize progressive blender of fragments
+
         if self.debug:
             homog_blender = DebugBlender(self.process_HW, self.config)
 
@@ -401,7 +403,7 @@ class StitchApp():
             # The img paths is sent to load the images in correct format for feature extraction and matching
             # homographies, _ , to_del = self.homog_estimator.match(self.ref_resized_path, self.frag_paths)
             homographies, _, to_del = self.homog_estimator.register(self.ref_resized_path, self.frag_paths)
-            # self.frag_paths = [val for idx, val in enumerate(self.frag_paths) if idx not in to_del]
+            self.frag_paths = [val for idx, val in enumerate(self.frag_paths) if idx not in to_del]
 
             if self.config.homog.save:
                 norm_homog = {}
@@ -532,9 +534,6 @@ class StitchApp():
         height, width = self.config.final_res
         corner_coords = list(self.config.corner_coords)
         ordered_coords = order_points(np.array(corner_coords))
-
-        # width = int(min(ordered_coords[1][0] - ordered_coords[0][0], ordered_coords[2][0] - ordered_coords[3][0]))
-        # height = int(min(ordered_coords[3][1] - ordered_coords[0][1], ordered_coords[2][1] - ordered_coords[1][1]))
 
         pts_dst = np.array([
             [0, 0],

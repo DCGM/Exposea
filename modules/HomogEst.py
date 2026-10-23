@@ -593,7 +593,7 @@ class HomogEstimator:
                             [self.images[1], m_kpts2, kpts2],
                             path=f"./plots/kpts_{pair[0]}_{pair[1]}.jpeg")
 
-        if len(np.asarray(m_kpts2.cpu())) < 20 or len(np.asarray(m_kpts1.cpu())) < 20:
+        if len(np.asarray(m_kpts2.cpu())) < 10 or len(np.asarray(m_kpts1.cpu())) < 10:
             print("Not enough points")
             return None, None, None
 
