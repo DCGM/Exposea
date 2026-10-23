@@ -590,13 +590,24 @@ class HomogEstimator:
 
             kpts_frag, kpts_ref = self.matcher.match(frag_path)
 
-            H, mask = cv.findHomography(
-                kpts_frag,
-                kpts_ref,
-                cv.USAC_MAGSAC,
-                ransacReprojThreshold=self.ransac_reproj_thresh,
-                confidence=self.ransac_conf
-            )
+            # cv.findHomography (USAC_MAGSAC) throws a hard cv2.error below 4
+            # correspondences instead of returning None -- it does not degrade
+            # gracefully the way the rest of this method assumes. A fragment
+            # that scored zero (or near-zero) matches must be routed to the
+            # autofix/to_skip path below rather than crashing register_all.py
+            # and, via entrypoint-oneshot.sh's `set -e`, every scene queued
+            # after this one.
+            min_pts = max(4, self.config.homog.min_matches)
+            if kpts_frag.shape[0] < min_pts or kpts_ref.shape[0] < min_pts:
+                H, mask = None, None
+            else:
+                H, mask = cv.findHomography(
+                    kpts_frag,
+                    kpts_ref,
+                    cv.USAC_MAGSAC,
+                    ransacReprojThreshold=self.ransac_reproj_thresh,
+                    confidence=self.ransac_conf
+                )
 
             if H is None or kpts_frag.shape[0] < self.config.homog.min_matches or kpts_ref.shape[0] < self.config.homog.min_matches:
                 self.logger.warning(f"Autofix | Matcher was unable to estimate homography trying simple autofix")
@@ -739,7 +750,7 @@ class HomogEstimator:
                             [self.images[1], m_kpts2, kpts2],
                             path=f"./plots/kpts_{pair[0]}_{pair[1]}.jpeg")
 
-        if len(np.asarray(m_kpts2.cpu())) < 20 or len(np.asarray(m_kpts1.cpu())) < 20:
+        if len(np.asarray(m_kpts2.cpu())) < 10 or len(np.asarray(m_kpts1.cpu())) < 10:
             print("Not enough points")
             return None, None, None
 
